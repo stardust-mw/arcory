@@ -1,10 +1,16 @@
 import type { Metadata } from "next";
+import { Geist_Mono } from "next/font/google";
+
 import "./globals.css";
 
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
-  title: "Arcory | Curated Feed",
-  description:
-    "A curated library for websites, articles, plugins, and real-world cases.",
+  title: "Arcory",
+  description: "Archive + story",
 };
 
 export default function RootLayout({
@@ -14,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className={`${geistMono.variable} antialiased`}>{children}</body>
     </html>
   );
 }
