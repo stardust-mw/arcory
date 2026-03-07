@@ -149,7 +149,7 @@ const categoryKeywords: Record<SiteCategory, string[]> = {
   KNOWLEDGE: ["docs", "documentation", "guide", "tutorial", "article", "blog", "知识", "文档", "教程"],
   PROJECT: ["project", "roadmap", "changelog", "repo", "github", "board", "kanban", "项目", "进度"],
   RESOURCES: ["resource", "tool", "playground", "api", "sdk", "template", "library", "工具", "资源"],
-  SYSTEMS: ["system", "architecture", "infra", "platform", "workflow", "pipeline", "架构", "系统"],
+  SYSTEM: ["system", "architecture", "infra", "platform", "workflow", "pipeline", "架构", "系统"],
 };
 
 const URL_NAME_PATTERN = /(url|link|website|site|网址|链接)/i;
@@ -334,8 +334,28 @@ function normalizeText(value: string) {
 
 function normalizeCategory(value?: string | null): SiteCategory | null {
   if (!value) return null;
-  const candidate = value.trim().toUpperCase();
+  const raw = value.trim().toUpperCase();
+  const candidate = raw === "SYSTEMS" ? "SYSTEM" : raw;
   return categorySet.has(candidate as SiteCategory) ? (candidate as SiteCategory) : null;
+}
+
+function normalizeCachedSites(sites: unknown): CachedNotionSite[] {
+  if (!Array.isArray(sites)) return [];
+
+  const normalized: CachedNotionSite[] = [];
+  for (const entry of sites) {
+    if (!entry || typeof entry !== "object") continue;
+    const site = entry as CachedNotionSite;
+    const category = normalizeCategory(site.category) ?? "RESOURCES";
+    const subcategory = normalizeSubcategoryForCategory(category, site.subcategory);
+    normalized.push({
+      ...site,
+      category,
+      subcategory,
+    });
+  }
+
+  return dedupeCachedSitesByIdentity(normalized);
 }
 
 function richTextToString(richText?: NotionRichText[]) {
@@ -900,9 +920,74 @@ function dedupeSitesByUrl(sites: NormalizedNotionSite[]) {
   return Array.from(deduped.values());
 }
 
+function normalizeTitleForSiteIdentity(value: string) {
+  return cleanTitle(value).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function getPathDepth(url: string) {
+  try {
+    const parsed = new URL(url);
+    return parsed.pathname.split("/").filter(Boolean).length;
+  } catch {
+    return Number.MAX_SAFE_INTEGER;
+  }
+}
+
+function buildCachedSiteIdentityKey(site: CachedNotionSite) {
+  const category = normalizeCategory(site.category) ?? "RESOURCES";
+  const safeUrl = site.url ?? "";
+  const host = extractDomain(safeUrl);
+  const title = normalizeTitleForSiteIdentity(site.title);
+
+  // Fall back to URL-based key when host/title is weak to avoid over-merging.
+  if (!host || !title) {
+    return `${buildUrlDedupKey(safeUrl)}::${category}`;
+  }
+
+  return `${host}::${title}::${category}`;
+}
+
+function pickPreferredCachedSite(a: CachedNotionSite, b: CachedNotionSite) {
+  if (a.clicks !== b.clicks) return b.clicks > a.clicks ? b : a;
+
+  const timeA = getTimestampValue(a.lastEditedTime);
+  const timeB = getTimestampValue(b.lastEditedTime);
+  if (timeA !== timeB) return timeB > timeA ? b : a;
+
+  const pathDepthA = getPathDepth(a.url ?? "");
+  const pathDepthB = getPathDepth(b.url ?? "");
+  if (pathDepthA !== pathDepthB) return pathDepthA < pathDepthB ? a : b;
+
+  return b.notionPageId.localeCompare(a.notionPageId) > 0 ? b : a;
+}
+
+function dedupeCachedSitesByIdentity(sites: CachedNotionSite[]) {
+  const deduped = new Map<string, CachedNotionSite>();
+
+  for (const site of sites) {
+    const key = buildCachedSiteIdentityKey(site);
+    const current = deduped.get(key);
+    if (!current) {
+      deduped.set(key, site);
+      continue;
+    }
+
+    deduped.set(key, pickPreferredCachedSite(current, site));
+  }
+
+  return Array.from(deduped.values());
+}
+
 function normalizeManualSubcategory(value?: string) {
   const token = formatSubcategoryToken(value ?? "");
   return token || "";
+}
+
+function normalizeSubcategoryForCategory(category: SiteCategory, subcategory?: string | null) {
+  const normalized = normalizeManualSubcategory(subcategory ?? "");
+  if (!normalized) return "GENERAL";
+  if (normalized === category) return "GENERAL";
+  return normalized;
 }
 
 function buildSubcategoryModel(sitesWithCategory: SiteWithCategory[]): SubcategoryModel {
@@ -1019,7 +1104,7 @@ async function inferCategoryByAI(site: NormalizedNotionSite): Promise<SiteCatego
           {
             role: "system",
             content:
-              "You are a strict classifier. Return JSON with one field: category. category must be one of COMPONENTS, DESIGN, INSPIRATION, KNOWLEDGE, PROJECT, RESOURCES, SYSTEMS.",
+              "You are a strict classifier. Return JSON with one field: category. category must be one of COMPONENTS, DESIGN, INSPIRATION, KNOWLEDGE, PROJECT, RESOURCES, SYSTEM.",
           },
           {
             role: "user",
@@ -1063,7 +1148,7 @@ function applyClassificationStrategy(
 
   if (manualCategory || manualSubcategory) {
     const category = manualCategory ?? autoCategory;
-    const subcategory = manualSubcategory || autoSubcategory;
+    const subcategory = normalizeSubcategoryForCategory(category, manualSubcategory || autoSubcategory);
 
     if (lockFile.locked) {
       pendingLockUpdates[urlKey] = {
@@ -1079,22 +1164,23 @@ function applyClassificationStrategy(
   if (lockFile.locked) {
     const locked = lockFile.items[urlKey];
     if (locked) {
+      const category = normalizeCategory(locked.category) ?? autoCategory;
       return {
-        category: locked.category,
-        subcategory: locked.subcategory,
+        category,
+        subcategory: normalizeSubcategoryForCategory(category, locked.subcategory),
       };
     }
 
     pendingLockUpdates[urlKey] = {
       category: autoCategory,
-      subcategory: autoSubcategory,
+      subcategory: normalizeSubcategoryForCategory(autoCategory, autoSubcategory),
       lockedAt: nowIso,
     };
   }
 
   return {
     category: autoCategory,
-    subcategory: autoSubcategory,
+    subcategory: normalizeSubcategoryForCategory(autoCategory, autoSubcategory),
   };
 }
 
@@ -1120,10 +1206,10 @@ async function readCacheFile(): Promise<NotionCacheFile> {
   try {
     const content = await readFile(CACHE_FILE, "utf8");
     const parsed = JSON.parse(content) as NotionCacheFile;
-    if (!parsed || !Array.isArray(parsed.sites)) return DEFAULT_CACHE;
+    if (!parsed) return DEFAULT_CACHE;
     return {
       syncedAt: parsed.syncedAt ?? null,
-      sites: parsed.sites,
+      sites: normalizeCachedSites(parsed.sites),
     };
   } catch {
     return DEFAULT_CACHE;
@@ -1141,12 +1227,17 @@ async function readBackupFile(): Promise<NotionBackupFile> {
     const parsed = JSON.parse(content) as NotionBackupFile;
     if (!parsed || !Array.isArray(parsed.snapshots)) return DEFAULT_BACKUP;
 
-    const snapshots = parsed.snapshots.filter((snapshot) => {
-      if (!snapshot || typeof snapshot.syncedAt !== "string") return false;
-      if (!Array.isArray(snapshot.sites)) return false;
-      if (typeof snapshot.slot !== "string" || snapshot.slot.length === 0) return false;
-      return true;
-    });
+    const snapshots = parsed.snapshots
+      .filter((snapshot) => {
+        if (!snapshot || typeof snapshot.syncedAt !== "string") return false;
+        if (!Array.isArray(snapshot.sites)) return false;
+        if (typeof snapshot.slot !== "string" || snapshot.slot.length === 0) return false;
+        return true;
+      })
+      .map((snapshot) => ({
+        ...snapshot,
+        sites: normalizeCachedSites(snapshot.sites),
+      }));
 
     return { snapshots };
   } catch {
@@ -1201,7 +1292,9 @@ async function readClassificationLockFile(): Promise<ClassificationLockFile> {
     for (const [urlKey, value] of Object.entries(parsed.items)) {
       if (!value || typeof value !== "object") continue;
       const category = normalizeCategory((value as LockedClassification).category);
-      const subcategory = normalizeManualSubcategory((value as LockedClassification).subcategory);
+      const subcategory = category
+        ? normalizeSubcategoryForCategory(category, (value as LockedClassification).subcategory)
+        : "";
       const lockedAt =
         typeof (value as LockedClassification).lockedAt === "string" ? (value as LockedClassification).lockedAt : "";
       if (!category || !subcategory || !lockedAt) continue;
@@ -1229,12 +1322,12 @@ async function writeClassificationLockFile(lockFile: ClassificationLockFile) {
 
 function mapCachedSitesToClientSites(sites: CachedNotionSite[]) {
   return sites.map((site) => ({
+    category: normalizeCategory(site.category) ?? "RESOURCES",
+    subcategory: normalizeSubcategoryForCategory(normalizeCategory(site.category) ?? "RESOURCES", site.subcategory),
     id: site.id,
     title: site.title,
     meta: site.meta,
     clicks: site.clicks,
-    category: site.category,
-    subcategory: site.subcategory,
     url: site.url,
     source: site.source,
     updatedAt: site.updatedAt,
@@ -1259,10 +1352,11 @@ function buildClassificationSummary(sites: CachedNotionSite[]) {
   >;
 
   for (const site of sites) {
-    const bucket = byCategory[site.category];
+    const category = normalizeCategory(site.category) ?? "RESOURCES";
+    const bucket = byCategory[category];
     bucket.count += 1;
 
-    const normalizedSubcategory = normalizeManualSubcategory(site.subcategory) || "GENERAL";
+    const normalizedSubcategory = normalizeSubcategoryForCategory(category, site.subcategory);
     bucket.subcategoryCounts.set(normalizedSubcategory, (bucket.subcategoryCounts.get(normalizedSubcategory) ?? 0) + 1);
   }
 
@@ -1427,8 +1521,11 @@ export async function syncNotionSites(options: SyncNotionOptions = false) {
       ...site,
       title: resolvedTitle,
     };
+    const preservedOldCategory = normalizeCategory(old?.category);
     const autoCategory =
-      old && unchangedByNotion && !reclassify ? old.category : await classifySiteCategory(normalizedSite);
+      old && unchangedByNotion && !reclassify && preservedOldCategory
+        ? preservedOldCategory
+        : await classifySiteCategory(normalizedSite);
     preparedSites.push({
       site: normalizedSite,
       old,
@@ -1484,11 +1581,12 @@ export async function syncNotionSites(options: SyncNotionOptions = false) {
     nextSites.push(nextSite);
   }
 
-  nextSites.sort((a, b) => b.clicks - a.clicks || a.title.localeCompare(b.title));
+  const dedupedNextSites = dedupeCachedSitesByIdentity(nextSites);
+  dedupedNextSites.sort((a, b) => b.clicks - a.clicks || a.title.localeCompare(b.title));
 
   const nextCache: NotionCacheFile = {
     syncedAt: nowIso,
-    sites: nextSites,
+    sites: dedupedNextSites,
   };
 
   if (lockFile.locked) {
@@ -1524,10 +1622,10 @@ export async function syncNotionSites(options: SyncNotionOptions = false) {
     reason: "synced" as const,
     cache: nextCache,
     stats: {
-      total: nextSites.length,
+      total: dedupedNextSites.length,
       created,
       updated,
-      removed: Math.max(oldById.size - nextSites.length, 0),
+      removed: Math.max(oldById.size - dedupedNextSites.length, 0),
     },
   };
 }
@@ -1554,9 +1652,10 @@ export async function confirmClassificationLockFromCache() {
   const items: Record<string, LockedClassification> = {};
   for (const site of cache.sites) {
     if (!site.url) continue;
+    const category = normalizeCategory(site.category) ?? "RESOURCES";
     items[buildUrlDedupKey(site.url)] = {
-      category: site.category,
-      subcategory: normalizeManualSubcategory(site.subcategory) || "GENERAL",
+      category,
+      subcategory: normalizeSubcategoryForCategory(category, site.subcategory),
       lockedAt: nowIso,
     };
   }

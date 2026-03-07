@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRightIcon } from "lucide-react";
 
 import { HeroAsciiGrid } from "@/components/hero-ascii-grid";
 import { IdenticonAvatar } from "@/components/identicon-avatar";
@@ -17,7 +16,239 @@ type SitesApiResponse = {
   sites: SavedSite[];
   source: "notion" | "unavailable";
   syncedAt: string | null;
+  total?: number;
+  offset?: number;
+  limit?: number;
+  hasMore?: boolean;
+  nextOffset?: number | null;
 };
+
+type HoverPreviewItem = {
+  id: string;
+  title: string;
+  url: string;
+  host: string;
+  meta: string;
+};
+
+const screenshotStatusCache = new Map<string, "ready" | "error">();
+const faviconStatusCache = new Map<string, "ready" | "error">();
+const INITIAL_SITES_LIMIT = 24;
+const BACKGROUND_SITES_LIMIT = 48;
+
+function normalizeSiteUrl(value?: string) {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    return new URL(candidate).toString();
+  } catch {
+    return "";
+  }
+}
+
+function getSiteHost(value?: string) {
+  const normalized = normalizeSiteUrl(value);
+  if (!normalized) return "";
+
+  try {
+    return new URL(normalized).hostname.replace(/^www\./i, "");
+  } catch {
+    return "";
+  }
+}
+
+function buildScreenshotPreviewUrl(url: string) {
+  const normalized = normalizeSiteUrl(url);
+  if (!normalized) return "";
+  return `https://image.thum.io/get/width/960/noanimate/${encodeURIComponent(normalized)}`;
+}
+
+function buildFaviconCandidates(host: string) {
+  if (!host) return [];
+
+  return [
+    `https://${host}/favicon.ico`,
+    `https://icons.duckduckgo.com/ip3/${encodeURIComponent(host)}.ico`,
+    `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`,
+  ];
+}
+
+function SiteListAvatar({ seed, host }: { seed: string; host: string }) {
+  const faviconCandidates = useMemo(() => buildFaviconCandidates(host), [host]);
+  const [faviconIndex, setFaviconIndex] = useState(0);
+  const [faviconStatus, setFaviconStatus] = useState<"loading" | "ready" | "error">("loading");
+  const faviconUrl = faviconCandidates[faviconIndex] ?? "";
+
+  useEffect(() => {
+    if (faviconCandidates.length === 0) {
+      setFaviconStatus("error");
+      setFaviconIndex(0);
+      return;
+    }
+
+    const readyIndex = faviconCandidates.findIndex((candidate) => faviconStatusCache.get(candidate) === "ready");
+    if (readyIndex >= 0) {
+      setFaviconIndex(readyIndex);
+      setFaviconStatus("ready");
+      return;
+    }
+
+    const pendingIndex = faviconCandidates.findIndex((candidate) => faviconStatusCache.get(candidate) !== "error");
+    if (pendingIndex >= 0) {
+      setFaviconIndex(pendingIndex);
+      const cached = faviconStatusCache.get(faviconCandidates[pendingIndex]);
+      setFaviconStatus(cached ?? "loading");
+      return;
+    }
+
+    setFaviconIndex(0);
+    setFaviconStatus("error");
+  }, [faviconCandidates]);
+
+  return (
+    <span className="relative inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full">
+      {faviconStatus !== "ready" ? (
+        <IdenticonAvatar
+          alt={`${seed} identicon`}
+          className="size-5"
+          monoChroma={0.08}
+          monoLightnessHigh={0.8}
+          monoLightnessLow={0.35}
+          seed={seed}
+          size={20}
+        />
+      ) : null}
+      {faviconUrl ? (
+        <img
+          alt=""
+          className={cn(
+            "absolute inset-0 size-5 object-cover transition-opacity duration-150",
+            faviconStatus === "ready" ? "opacity-100" : "opacity-0",
+          )}
+          onError={() => {
+            if (!faviconUrl) return;
+            faviconStatusCache.set(faviconUrl, "error");
+            const nextIndex = faviconCandidates.findIndex(
+              (candidate, index) => index > faviconIndex && faviconStatusCache.get(candidate) !== "error",
+            );
+            if (nextIndex >= 0) {
+              setFaviconIndex(nextIndex);
+              setFaviconStatus("loading");
+              return;
+            }
+            setFaviconStatus("error");
+          }}
+          onLoad={() => {
+            if (!faviconUrl) return;
+            faviconStatusCache.set(faviconUrl, "ready");
+            setFaviconStatus("ready");
+          }}
+          src={faviconUrl}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+function buildHoverPreviewItem(site: SavedSite): HoverPreviewItem | null {
+  const normalizedUrl = normalizeSiteUrl(site.url);
+  if (!normalizedUrl) return null;
+
+  return {
+    id: site.id,
+    title: site.title,
+    url: normalizedUrl,
+    host: getSiteHost(normalizedUrl),
+    meta: site.meta,
+  };
+}
+
+function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; className?: string }) {
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const screenshotUrl = buildScreenshotPreviewUrl(item.url);
+  const faviconUrl = buildFaviconCandidates(item.host)[0] ?? "";
+  const shouldRequestScreenshot = Boolean(screenshotUrl && status !== "error");
+  const metaTokens = item.meta
+    .split("•")
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+
+  useEffect(() => {
+    if (!screenshotUrl) {
+      setStatus("error");
+      return;
+    }
+
+    const cached = screenshotStatusCache.get(screenshotUrl);
+    setStatus(cached ?? "loading");
+  }, [screenshotUrl]);
+
+  return (
+    <aside
+      className={cn(
+        "pointer-events-none w-[320px] overflow-hidden rounded-none border border-border bg-card shadow-2xl",
+        className,
+      )}
+    >
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <p className="truncate text-xs text-foreground">{item.title}</p>
+        <p className="ml-3 shrink-0 text-[11px] text-muted-foreground">{item.host}</p>
+      </div>
+      <div className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-muted/70 via-muted/35 to-card">
+        <div className="absolute inset-0 flex flex-col justify-between p-3">
+          <div className="flex items-center gap-2">
+            {faviconUrl ? (
+              <img
+                alt=""
+                className="size-4 shrink-0 rounded-sm opacity-85"
+                onError={(event) => {
+                  (event.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+                src={faviconUrl}
+              />
+            ) : null}
+            <p className="truncate text-[11px] text-foreground/90">{item.host}</p>
+          </div>
+          <div>
+            <p className="line-clamp-2 text-[13px] text-foreground">{item.title}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {metaTokens.length > 0 ? metaTokens.join(" • ") : "Open in new tab"}
+            </p>
+          </div>
+        </div>
+
+        {shouldRequestScreenshot ? (
+          <img
+            alt=""
+            className={cn(
+              "absolute inset-0 h-full w-full object-cover transition-opacity duration-200",
+              status === "ready" ? "opacity-100" : "opacity-0",
+            )}
+            onError={() => {
+              screenshotStatusCache.set(screenshotUrl, "error");
+              setStatus("error");
+            }}
+            onLoad={() => {
+              screenshotStatusCache.set(screenshotUrl, "ready");
+              setStatus("ready");
+            }}
+            src={screenshotUrl}
+          />
+        ) : null}
+
+        {status === "loading" ? (
+          <div className="absolute right-2 bottom-2 rounded-none bg-background/85 px-1.5 py-1 text-[10px] text-muted-foreground">
+            Loading preview...
+          </div>
+        ) : null}
+      </div>
+    </aside>
+  );
+}
 
 function LoadingSiteRows() {
   return (
@@ -39,26 +270,46 @@ function LoadingSiteRows() {
   );
 }
 
-function SavedSiteRow({ site }: { site: SavedSite }) {
+function SavedSiteRow({
+  site,
+  onPreviewChange,
+}: {
+  site: SavedSite;
+  onPreviewChange?: (item: HoverPreviewItem | null) => void;
+}) {
   const metaTokens = site.meta
     .split("•")
     .map((item) => item.trim())
     .filter(Boolean);
+  const targetUrl = normalizeSiteUrl(site.url);
+  const targetHost = getSiteHost(targetUrl);
+  const previewItem = buildHoverPreviewItem(site);
+  const showPreview = () => {
+    if (!previewItem) return;
+    onPreviewChange?.(previewItem);
+  };
+  const hidePreview = () => {
+    onPreviewChange?.(null);
+  };
 
   return (
-    <div className="group flex items-center gap-2 rounded-sm px-1 py-3 text-xs transition-colors duration-150 hover:bg-muted/50">
-      <div className="flex items-center justify-center text-muted-foreground transition-colors duration-150 group-hover:text-foreground">
+    <button
+      className={cn(
+        "group flex w-full cursor-pointer items-center gap-2 rounded-sm px-1 py-3 text-left text-xs transition-colors duration-150 hover:bg-muted/50",
+        !targetUrl && "cursor-not-allowed opacity-60",
+      )}
+      disabled={!targetUrl}
+      onClick={() => window.open(targetUrl, "_blank", "noopener,noreferrer")}
+      onBlur={hidePreview}
+      onFocus={showPreview}
+      onMouseEnter={showPreview}
+      onMouseLeave={hidePreview}
+      type="button"
+    >
+      <div className="flex items-center justify-center pr-1 text-muted-foreground transition-colors duration-150 group-hover:text-foreground">
         &gt;
       </div>
-      <IdenticonAvatar
-        alt={`${site.title} identicon`}
-        className="size-5"
-        monoChroma={0.08}
-        monoLightnessHigh={0.8}
-        monoLightnessLow={0.35}
-        seed={site.title}
-        size={20}
-      />
+      <SiteListAvatar host={targetHost} seed={site.title} />
       <div className="flex min-w-0 flex-1 items-start justify-between gap-4 pl-0">
         <div className="min-w-0">
           <p className="truncate text-foreground">{site.title}</p>
@@ -75,7 +326,7 @@ function SavedSiteRow({ site }: { site: SavedSite }) {
           {site.clicks} Clicks
         </p>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -85,25 +336,84 @@ export default function Home() {
   const [keyword, setKeyword] = useState("");
   const [sites, setSites] = useState<SavedSite[]>([]);
   const [isLoadingSites, setIsLoadingSites] = useState(true);
+  const [isHydratingSites, setIsHydratingSites] = useState(false);
+  const [hasMoreSites, setHasMoreSites] = useState(false);
+  const [activePreview, setActivePreview] = useState<HoverPreviewItem | null>(null);
   const buttonRefs = useRef<Partial<Record<Category, HTMLButtonElement | null>>>({});
 
   useEffect(() => {
     let cancelled = false;
 
+    const fetchSitesPage = async (offset: number, limit: number) => {
+      const params = new URLSearchParams({
+        offset: String(offset),
+        limit: String(limit),
+      });
+      const response = await fetch(`/api/sites?${params.toString()}`, { cache: "no-store" });
+      if (!response.ok) return null;
+      return (await response.json()) as SitesApiResponse;
+    };
+
+    const hydrateRemainingSites = async (startOffset: number) => {
+      if (cancelled) return;
+
+      setIsHydratingSites(true);
+      let offset = startOffset;
+      let shouldContinue = true;
+
+      while (!cancelled && shouldContinue) {
+        const data = await fetchSitesPage(offset, BACKGROUND_SITES_LIMIT);
+        if (!data || !Array.isArray(data.sites) || data.sites.length === 0) {
+          if (!cancelled) setHasMoreSites(false);
+          break;
+        }
+
+        setSites((current) => {
+          const ids = new Set(current.map((site) => site.id));
+          const appended = data.sites.filter((site) => !ids.has(site.id));
+          return appended.length > 0 ? [...current, ...appended] : current;
+        });
+
+        const nextHasMore = Boolean(data.hasMore);
+        const nextOffset = typeof data.nextOffset === "number" ? data.nextOffset : offset + data.sites.length;
+        if (!cancelled) {
+          setHasMoreSites(nextHasMore);
+        }
+
+        offset = nextOffset;
+        shouldContinue = nextHasMore;
+
+        if (shouldContinue) {
+          await new Promise((resolve) => setTimeout(resolve, 80));
+        }
+      }
+
+      if (!cancelled) {
+        setIsHydratingSites(false);
+      }
+    };
+
     const fetchSites = async () => {
       setIsLoadingSites(true);
+      setIsHydratingSites(false);
+      setHasMoreSites(false);
       try {
-        const response = await fetch("/api/sites", { cache: "no-store" });
-        if (!response.ok) {
+        const data = await fetchSitesPage(0, INITIAL_SITES_LIMIT);
+        if (!data || !Array.isArray(data.sites)) {
           if (!cancelled) setSites([]);
           return;
         }
-        const data = (await response.json()) as SitesApiResponse;
-        if (cancelled || !Array.isArray(data.sites)) {
-          if (!cancelled) setSites([]);
-          return;
-        }
+        if (cancelled) return;
+
         setSites(data.sites);
+
+        const nextHasMore = Boolean(data.hasMore);
+        setHasMoreSites(nextHasMore);
+
+        if (nextHasMore) {
+          const nextOffset = typeof data.nextOffset === "number" ? data.nextOffset : data.sites.length;
+          void hydrateRemainingSites(nextOffset);
+        }
       } catch {
         if (!cancelled) setSites([]);
       } finally {
@@ -125,7 +435,10 @@ export default function Home() {
 
     for (const site of sites) {
       if (site.subcategory) {
-        grouped[site.category].add(site.subcategory.trim().toUpperCase());
+        const normalizedSubcategory = site.subcategory.trim().toUpperCase();
+        if (normalizedSubcategory !== site.category) {
+          grouped[site.category].add(normalizedSubcategory);
+        }
       }
     }
 
@@ -161,6 +474,14 @@ export default function Home() {
     });
   }, [activeCategory, activeSubcategory, keyword, sites]);
 
+  useEffect(() => {
+    if (!activePreview) return;
+    const stillInCurrentResult = filteredSites.some((site) => site.id === activePreview.id);
+    if (!stillInCurrentResult) {
+      setActivePreview(null);
+    }
+  }, [activePreview, filteredSites]);
+
   const switchCategoryByArrow = (current: Category, direction: 1 | -1) => {
     const currentIndex = categories.indexOf(current);
     if (currentIndex === -1 || categories.length <= 1) return;
@@ -193,13 +514,16 @@ export default function Home() {
             <span className="text-[16px] leading-none">Arcory</span>
           </Link>
           <div className="flex items-center gap-3">
-            <a className="text-foreground" href="#">
-              About
-            </a>
-            <ThemeToggle />
-            <Button aria-label="Submit" size="icon" type="button" variant="outline">
-              <ArrowRightIcon />
+            <Button
+              asChild
+              className="hover:bg-transparent focus-visible:bg-transparent active:bg-transparent"
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <Link href="/about">About</Link>
             </Button>
+            <ThemeToggle />
           </div>
         </header>
 
@@ -222,7 +546,7 @@ export default function Home() {
                     "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
                     "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
                     activeCategory === category &&
-                      "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background",
+                      "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80 dark:hover:text-secondary-foreground dark:active:bg-secondary/70 dark:active:text-secondary-foreground",
                   )}
                   key={category}
                   onClick={() => {
@@ -254,20 +578,6 @@ export default function Home() {
             {activeCategory !== "ALL" ? (
               <div aria-label={`${activeCategory} subcategories`} className="no-scrollbar mt-2 overflow-x-auto">
                 <div className="inline-flex items-center gap-2 whitespace-nowrap bg-muted px-1 py-1">
-                  <button
-                    aria-pressed={activeSubcategory === "ALL"}
-                    className={cn(
-                      "rounded-none px-1.5 py-1 text-[11px] leading-none transition-colors duration-150",
-                      "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                      "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
-                      activeSubcategory === "ALL" &&
-                        "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background",
-                    )}
-                    onClick={() => setActiveSubcategory("ALL")}
-                    type="button"
-                  >
-                    ALL
-                  </button>
                   {subcategoriesByCategory[activeCategory].map((subcategory) => (
                     <button
                       aria-pressed={activeSubcategory === subcategory}
@@ -276,10 +586,12 @@ export default function Home() {
                         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
                         "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
                         activeSubcategory === subcategory &&
-                          "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background",
+                          "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80 dark:hover:text-secondary-foreground dark:active:bg-secondary/70 dark:active:text-secondary-foreground",
                       )}
                       key={subcategory}
-                      onClick={() => setActiveSubcategory(subcategory)}
+                      onClick={() =>
+                        setActiveSubcategory((current) => (current === subcategory ? "ALL" : subcategory))
+                      }
                       type="button"
                     >
                       {subcategory}
@@ -304,14 +616,20 @@ export default function Home() {
             ) : isCategoryEmpty ? (
               <ListEmptyState category={activeCategory} mode="category" />
             ) : filteredSites.length > 0 ? (
-              filteredSites.map((site) => <SavedSiteRow key={site.id} site={site} />)
+              filteredSites.map((site) => (
+                <SavedSiteRow key={site.id} onPreviewChange={setActivePreview} site={site} />
+              ))
             ) : (
               <ListEmptyState category={activeCategory} mode="search" />
             )}
           </div>
 
           <div className="py-4 text-center text-xs uppercase tracking-[0.06em] text-foreground">
-            {isLoadingSites ? "Loading..." : `${filteredSites.length} Saves`}
+            {isLoadingSites
+              ? "Loading..."
+              : isHydratingSites || hasMoreSites
+                ? `${filteredSites.length} Saves · Syncing more...`
+                : `${filteredSites.length} Saves`}
           </div>
         </section>
 
@@ -323,6 +641,11 @@ export default function Home() {
           </div>
         </footer>
       </div>
+      {activePreview ? (
+        <div className="pointer-events-none fixed right-6 bottom-6 z-40 hidden lg:block">
+          <HoverPreviewPanel className="rounded-none shadow-2xl" item={activePreview} />
+        </div>
+      ) : null}
     </main>
   );
 }

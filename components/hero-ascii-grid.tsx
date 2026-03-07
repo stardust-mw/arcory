@@ -183,9 +183,9 @@ export function HeroAsciiGrid() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center [contain:paint]">
         <div
-          className="relative flex flex-col items-center justify-center gap-1 bg-white text-center"
+          className="relative flex flex-col items-center justify-center gap-1 bg-card text-center text-foreground"
           style={{
             width: "calc((100% / 20) * 12)",
             height: `${GRID_ROW_HEIGHT * 3 + GRID_ROW_GAP * 2}px`,

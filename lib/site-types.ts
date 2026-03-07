@@ -5,7 +5,7 @@ export const siteCategories = [
   "KNOWLEDGE",
   "PROJECT",
   "RESOURCES",
-  "SYSTEMS",
+  "SYSTEM",
 ] as const;
 
 export type SiteCategory = (typeof siteCategories)[number];
