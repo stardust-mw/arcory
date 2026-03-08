@@ -5,6 +5,7 @@ import { categorySet, siteCategories, type SavedSite, type SiteCategory } from "
 
 const NOTION_API_BASE = "https://api.notion.com/v1";
 const NOTION_VERSION = "2022-06-28";
+const NOTION_FILE_UPLOAD_VERSION = process.env.NOTION_FILE_UPLOAD_VERSION ?? "2025-09-03";
 const DATA_DIR = path.join(process.cwd(), "data");
 const CACHE_FILE = path.join(DATA_DIR, "notion-sites-cache.json");
 const BACKUP_FILE = path.join(DATA_DIR, "notion-sites-backup.json");
@@ -34,6 +35,12 @@ type NotionPropertyValue = {
   title?: NotionRichText[];
   rich_text?: NotionRichText[];
   url?: string | null;
+  files?: Array<{
+    type?: string;
+    name?: string;
+    external?: { url?: string | null } | null;
+    file?: { url?: string | null } | null;
+  }>;
   number?: number | null;
   select?: { name?: string | null } | null;
   multi_select?: Array<{ name?: string | null }>;
@@ -59,11 +66,28 @@ type NotionQueryResponse = {
   next_cursor?: string | null;
 };
 
+type NotionDatabaseResponse = {
+  properties?: Record<string, { type?: string }>;
+};
+
+type NotionFileUploadResponse = {
+  id?: string;
+  upload_url?: string;
+  status?: string;
+};
+
+type ScreenshotBinary = {
+  buffer: Buffer;
+  contentType: string;
+  sourceUrl: string;
+};
+
 type NormalizedNotionSite = {
   notionPageId: string;
   lastEditedTime: string;
   title: string;
   url: string;
+  screenshot?: string;
   tags: string[];
   notes: string;
   clicks?: number;
@@ -77,6 +101,7 @@ type CachedNotionSite = SavedSite & {
   lastEditedTime: string;
   tags: string[];
   notes: string;
+  screenshot?: string;
 };
 
 type NotionCacheFile = {
@@ -159,6 +184,7 @@ const CATEGORY_NAME_PATTERN = /(category|分类)/i;
 const TAG_NAME_PATTERN = /(tag|label|标签)/i;
 const NOTES_NAME_PATTERN = /(note|desc|description|memo|备注|说明)/i;
 const CLICKS_NAME_PATTERN = /(click|visit|count|点击|访问)/i;
+const SCREENSHOT_NAME_PATTERN = /(screenshot|screenshoot|preview|thumbnail|thumb|截图|预览)/i;
 const URL_IN_TEXT_PATTERN = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+)/i;
 const WEAK_TITLE_TOKENS = new Set([
   "app",
@@ -326,6 +352,8 @@ const subcategoryRuleMap: Array<{
 ];
 
 const websiteTitleCache = new Map<string, string>();
+let screenshotPropertyCache: { name: string; type: "url" | "files" | "rich_text" } | null = null;
+let screenshotPropertyCacheReady = false;
 const ENABLE_TITLE_FETCH = process.env.NOTION_TITLE_FETCH === "1" || process.env.NOTION_TITLE_FETCH === "true";
 
 function normalizeText(value: string) {
@@ -429,9 +457,50 @@ function extractUrlFromRichText(richText?: NotionRichText[]) {
 function extractUrlFromPropertyValue(value?: NotionPropertyValue) {
   if (!value) return "";
   if (value.type === "url") return normalizeUrl(value.url ?? "");
+  if (value.type === "files") {
+    const files = value.files ?? [];
+    for (const file of files) {
+      const external = normalizeUrl(file.external?.url ?? "");
+      if (external) return external;
+      const hosted = normalizeUrl(file.file?.url ?? "");
+      if (hosted) return hosted;
+    }
+  }
   if (value.type === "title") return extractUrlFromRichText(value.title);
   if (value.type === "rich_text") return extractUrlFromRichText(value.rich_text);
   if (value.type === "formula") return extractUrlFromText(value.formula?.string ?? "");
+  return "";
+}
+
+function buildScreenshotPreviewUrl(url: string) {
+  const normalized = normalizeUrl(url);
+  if (!normalized) return "";
+  return `https://image.thum.io/get/width/1280/crop/900/noanimate/${normalized}`;
+}
+
+function getScreenshotSourceMode() {
+  const mode = (process.env.NOTION_SCREENSHOT_SOURCE ?? "auto").trim().toLowerCase();
+  if (mode === "playwright" || mode === "thumio" || mode === "auto") return mode;
+  return "auto";
+}
+
+function normalizeScreenshotSourceMode(value?: string | null) {
+  if (!value) return undefined;
+  const mode = value.trim().toLowerCase();
+  if (mode === "playwright" || mode === "thumio" || mode === "auto") return mode;
+  return undefined;
+}
+
+function extractScreenshotFromProperties(properties: Record<string, NotionPropertyValue>) {
+  const screenshotEntries = Object.entries(properties)
+    .filter(([name]) => SCREENSHOT_NAME_PATTERN.test(name))
+    .map(([, value]) => value);
+
+  for (const value of screenshotEntries) {
+    const resolved = extractUrlFromPropertyValue(value);
+    if (resolved) return resolved;
+  }
+
   return "";
 }
 
@@ -704,7 +773,7 @@ async function fetchWebsiteTitle(url: string) {
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Arcory Notion Sync Bot/1.0",
+        "User-Agent": "arcory Notion Sync Bot/1.0",
       },
       signal: controller.signal,
       cache: "no-store",
@@ -821,6 +890,7 @@ function extractSiteFromPage(page: NotionPage): NormalizedNotionSite | null {
   const extractedTitle = titleEntry ? richTextToString(titleEntry[1].title) : "";
   const title = pickFirstNonEmpty(extractedTitle, extractTitleFromProperties(properties));
   const url = extractUrlFromProperties(properties);
+  const screenshot = extractScreenshotFromProperties(properties);
   const tags = (tagsEntry?.[1].multi_select ?? [])
     .map((tag) => tag.name?.trim())
     .filter((tag): tag is string => Boolean(tag));
@@ -842,6 +912,7 @@ function extractSiteFromPage(page: NotionPage): NormalizedNotionSite | null {
     lastEditedTime: page.last_edited_time ?? new Date().toISOString(),
     title,
     url,
+    screenshot,
     tags,
     notes,
     clicks: typeof clicks === "number" ? clicks : undefined,
@@ -1188,6 +1259,7 @@ function isSiteContentEqual(oldSite: CachedNotionSite, nextSite: CachedNotionSit
   return (
     oldSite.title === nextSite.title &&
     oldSite.url === nextSite.url &&
+    oldSite.screenshot === nextSite.screenshot &&
     oldSite.category === nextSite.category &&
     oldSite.subcategory === nextSite.subcategory &&
     oldSite.meta === nextSite.meta &&
@@ -1329,6 +1401,7 @@ function mapCachedSitesToClientSites(sites: CachedNotionSite[]) {
     meta: site.meta,
     clicks: site.clicks,
     url: site.url,
+    screenshot: site.screenshot,
     source: site.source,
     updatedAt: site.updatedAt,
   }));
@@ -1466,16 +1539,390 @@ async function queryNotionDatabaseAll(): Promise<NotionPage[]> {
   return pages;
 }
 
+async function notionRequest(pathname: string, init?: RequestInit, notionVersion = NOTION_VERSION) {
+  const token = process.env.NOTION_TOKEN;
+  if (!token) throw new Error("Missing NOTION_TOKEN");
+
+  const response = await fetch(`${NOTION_API_BASE}${pathname}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Notion-Version": notionVersion,
+      ...(init?.headers ?? {}),
+    },
+    cache: "no-store",
+  });
+
+  return response;
+}
+
+async function resolveScreenshotProperty() {
+  if (screenshotPropertyCacheReady) return screenshotPropertyCache;
+  screenshotPropertyCacheReady = true;
+
+  const databaseId = process.env.NOTION_DATABASE_ID;
+  if (!databaseId) return null;
+
+  try {
+    const response = await notionRequest(`/databases/${databaseId}`);
+    if (!response.ok) return null;
+    const data = (await response.json()) as NotionDatabaseResponse;
+    const properties = data.properties ?? {};
+
+    for (const [name, value] of Object.entries(properties)) {
+      if (!SCREENSHOT_NAME_PATTERN.test(name)) continue;
+      const type = value?.type;
+      if (type === "url" || type === "files" || type === "rich_text") {
+        screenshotPropertyCache = { name, type };
+        return screenshotPropertyCache;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function buildScreenshotPropertyPayload(
+  property: { name: string; type: "url" | "files" | "rich_text" },
+  screenshotUrl: string,
+  fileUploadId?: string,
+) {
+  if (property.type === "url") {
+    return {
+      [property.name]: {
+        url: screenshotUrl,
+      },
+    };
+  }
+
+  if (property.type === "files") {
+    if (fileUploadId) {
+      return {
+        [property.name]: {
+          files: [
+            {
+              name: "screenshot",
+              type: "file_upload",
+              file_upload: {
+                id: fileUploadId,
+              },
+            },
+          ],
+        },
+      };
+    }
+
+    return {
+      [property.name]: {
+        files: [
+          {
+            name: "preview",
+            type: "external",
+            external: {
+              url: screenshotUrl,
+            },
+          },
+        ],
+      },
+    };
+  }
+
+  return {
+    [property.name]: {
+      rich_text: [
+        {
+          type: "text",
+          text: {
+            content: screenshotUrl,
+          },
+        },
+      ],
+    },
+  };
+}
+
+async function updateNotionPageScreenshot(pageId: string, propertyName: string, propertyPayload: Record<string, unknown>) {
+  const response = await notionRequest(`/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: propertyPayload,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Notion screenshot update failed (${response.status}) for ${propertyName}: ${errorText}`);
+  }
+}
+
+async function importPlaywrightModule() {
+  try {
+    const dynamicImport = new Function("specifier", "return import(specifier);") as (
+      specifier: string,
+    ) => Promise<{
+      chromium?: {
+        launch: (options?: Record<string, unknown>) => Promise<{
+          newPage: (options?: Record<string, unknown>) => Promise<{
+            goto: (target: string, options?: Record<string, unknown>) => Promise<unknown>;
+            waitForTimeout: (ms: number) => Promise<void>;
+            screenshot: (options?: Record<string, unknown>) => Promise<Buffer>;
+            close: () => Promise<void>;
+          }>;
+          close: () => Promise<void>;
+        }>;
+      };
+    }>;
+    return await dynamicImport("playwright");
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWebsiteScreenshotByPlaywright(url: string): Promise<ScreenshotBinary | null> {
+  const normalized = normalizeUrl(url);
+  if (!normalized) return null;
+
+  const playwright = await importPlaywrightModule();
+  if (!playwright?.chromium) return null;
+
+  const browser = await playwright.chromium.launch({
+    headless: true,
+    args: ["--disable-dev-shm-usage", "--no-sandbox"],
+  });
+
+  try {
+    const page = await browser.newPage({
+      viewport: { width: 1280, height: 900 },
+    });
+    await page.goto(normalized, {
+      waitUntil: "domcontentloaded",
+      timeout: 12000,
+    });
+    await page.waitForTimeout(1200);
+    const buffer = await page.screenshot({
+      type: "png",
+      fullPage: false,
+    });
+    await page.close();
+
+    return {
+      buffer,
+      contentType: "image/png",
+      sourceUrl: buildScreenshotPreviewUrl(normalized),
+    };
+  } catch {
+    return null;
+  } finally {
+    await browser.close();
+  }
+}
+
+async function fetchWebsiteScreenshotByThumio(url: string): Promise<ScreenshotBinary | null> {
+  const screenshotUrl = buildScreenshotPreviewUrl(url);
+  if (!screenshotUrl) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetch(screenshotUrl, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "arcory Screenshot Bot/1.0",
+      },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const contentType = (response.headers.get("content-type") ?? "image/png").split(";")[0].trim();
+    const arrayBuffer = await response.arrayBuffer();
+    if (!arrayBuffer.byteLength) return null;
+
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      contentType: contentType || "image/png",
+      sourceUrl: screenshotUrl,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchWebsiteScreenshotBinary(url: string, modeOverride?: string) {
+  const mode = normalizeScreenshotSourceMode(modeOverride) ?? getScreenshotSourceMode();
+
+  if (mode === "playwright") {
+    return fetchWebsiteScreenshotByPlaywright(url);
+  }
+
+  if (mode === "thumio") {
+    return fetchWebsiteScreenshotByThumio(url);
+  }
+
+  return (await fetchWebsiteScreenshotByPlaywright(url)) ?? (await fetchWebsiteScreenshotByThumio(url));
+}
+
+async function createNotionFileUpload(contentType: string, filename: string) {
+  const response = await notionRequest(
+    "/file_uploads",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        mode: "single_part",
+        filename,
+        content_type: contentType,
+      }),
+    },
+    NOTION_FILE_UPLOAD_VERSION,
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Notion file_upload create failed (${response.status}): ${errorText}`);
+  }
+
+  const data = (await response.json()) as NotionFileUploadResponse;
+  if (!data.id || !data.upload_url) {
+    throw new Error("Notion file_upload create missing id/upload_url");
+  }
+
+  return {
+    id: data.id,
+    uploadUrl: data.upload_url,
+  };
+}
+
+async function uploadBinaryToNotionUploadUrl(uploadUrl: string, buffer: Buffer, contentType: string) {
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": contentType,
+      "Content-Length": String(buffer.byteLength),
+    },
+    body: new Uint8Array(buffer),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Notion file_upload content PUT failed (${response.status}): ${errorText}`);
+  }
+}
+
+async function writeScreenshotsBackToNotion(
+  sites: CachedNotionSite[],
+  options?: { refreshExisting?: boolean; limit?: number; sourceMode?: string },
+) {
+  const property = await resolveScreenshotProperty();
+  if (!property) {
+    return { updated: 0, skipped: sites.length, reason: "missing-screenshot-property" as const };
+  }
+
+  const refreshExisting = Boolean(options?.refreshExisting);
+  const envMax = Number.parseInt(process.env.NOTION_SCREENSHOT_WRITEBACK_MAX ?? "120", 10) || 120;
+  const optionLimit = options?.limit ?? 0;
+  const maxPerRun = Math.max(1, optionLimit > 0 ? Math.min(optionLimit, envMax) : envMax);
+  const candidates = sites
+    .filter((site) => Boolean(site.notionPageId && site.url))
+    .slice(0, maxPerRun);
+
+  let updated = 0;
+  let skipped = 0;
+  let failed = 0;
+  let firstError = "";
+  let firstSkippedReason = "";
+  let firstSkippedUrl = "";
+
+  for (const site of candidates) {
+    if (!site.url) {
+      skipped += 1;
+      if (!firstSkippedReason) {
+        firstSkippedReason = "missing-site-url";
+        firstSkippedUrl = "";
+      }
+      continue;
+    }
+
+    if (!refreshExisting && normalizeUrl(site.screenshot)) {
+      skipped += 1;
+      if (!firstSkippedReason) {
+        firstSkippedReason = "already-has-screenshot";
+        firstSkippedUrl = site.url;
+      }
+      continue;
+    }
+
+    const screenshot = await fetchWebsiteScreenshotBinary(site.url, options?.sourceMode);
+    if (!screenshot) {
+      skipped += 1;
+      if (!firstSkippedReason) {
+        firstSkippedReason = "capture-unavailable";
+        firstSkippedUrl = site.url;
+      }
+      continue;
+    }
+
+    try {
+      let payload: Record<string, unknown>;
+
+      if (property.type === "files") {
+        payload = buildScreenshotPropertyPayload(property, screenshot.sourceUrl);
+      } else {
+        payload = buildScreenshotPropertyPayload(property, screenshot.sourceUrl);
+      }
+
+      await updateNotionPageScreenshot(site.notionPageId, property.name, payload);
+      updated += 1;
+      site.screenshot = screenshot.sourceUrl;
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    } catch (error) {
+      failed += 1;
+      if (!firstError) {
+        firstError = error instanceof Error ? error.message : "unknown screenshot writeback error";
+      }
+    }
+  }
+
+  return {
+    updated,
+    skipped,
+    failed,
+    reason: failed > 0 ? "partial-failed" as const : "done" as const,
+    firstError: firstError || null,
+    firstSkippedReason: firstSkippedReason || null,
+    firstSkippedUrl: firstSkippedUrl || null,
+  };
+}
+
 type SyncNotionOptions =
   | boolean
   | {
       force?: boolean;
       reclassify?: boolean;
+      writeScreenshots?: boolean;
+      refreshScreenshots?: boolean;
+      screenshotLimit?: number;
+      screenshotSource?: string;
     };
+
+let backgroundSyncPromise: Promise<void> | null = null;
 
 export async function syncNotionSites(options: SyncNotionOptions = false) {
   const force = typeof options === "boolean" ? options : Boolean(options.force);
   const reclassify = typeof options === "boolean" ? false : Boolean(options.reclassify);
+  const writeScreenshots = typeof options === "boolean" ? false : Boolean(options.writeScreenshots);
+  const refreshScreenshots = typeof options === "boolean" ? false : Boolean(options.refreshScreenshots);
+  const screenshotLimit =
+    typeof options === "boolean"
+      ? undefined
+      : typeof options.screenshotLimit === "number" && Number.isFinite(options.screenshotLimit)
+        ? options.screenshotLimit
+        : undefined;
+  const screenshotSource = typeof options === "boolean" ? undefined : options.screenshotSource;
 
   const cache = await readCacheFile();
   const oldById = new Map(cache.sites.map((site) => [site.notionPageId, site]));
@@ -1555,6 +2002,7 @@ export async function syncNotionSites(options: SyncNotionOptions = false) {
       notionPageId: item.site.notionPageId,
       title: item.site.title,
       url: item.site.url,
+      screenshot: normalizeUrl(item.site.screenshot) || normalizeUrl(item.old?.screenshot),
       tags: item.site.tags,
       notes: item.site.notes,
       clicks: item.site.clicks ?? item.old?.clicks ?? 0,
@@ -1583,6 +2031,15 @@ export async function syncNotionSites(options: SyncNotionOptions = false) {
 
   const dedupedNextSites = dedupeCachedSitesByIdentity(nextSites);
   dedupedNextSites.sort((a, b) => b.clicks - a.clicks || a.title.localeCompare(b.title));
+
+  let screenshotWriteback: { updated: number; skipped: number; reason: string } | null = null;
+  if (writeScreenshots) {
+    screenshotWriteback = await writeScreenshotsBackToNotion(dedupedNextSites, {
+      refreshExisting: refreshScreenshots,
+      limit: screenshotLimit,
+      sourceMode: screenshotSource,
+    });
+  }
 
   const nextCache: NotionCacheFile = {
     syncedAt: nowIso,
@@ -1627,6 +2084,7 @@ export async function syncNotionSites(options: SyncNotionOptions = false) {
       updated,
       removed: Math.max(oldById.size - dedupedNextSites.length, 0),
     },
+    screenshotWriteback,
   };
 }
 
@@ -1689,17 +2147,48 @@ export async function unlockClassificationLock() {
 }
 
 export async function getSitesForClient() {
+  if (process.env.NODE_ENV === "development") {
+    const devCache = await readCacheFile();
+    const devSites = mapCachedSitesToClientSites(devCache.sites);
+    if (devSites.length > 0) {
+      return {
+        sites: devSites,
+        source: "notion" as const,
+        syncedAt: devCache.syncedAt,
+      };
+    }
+    return getFallbackSitesFromBackupOrCache();
+  }
+
+  const cache = await readCacheFile();
+  const cachedSites = mapCachedSitesToClientSites(cache.sites);
+
+  // Serve cached data first to keep UI responsive, then refresh in background.
+  if (cachedSites.length > 0) {
+    if (!backgroundSyncPromise) {
+      backgroundSyncPromise = (async () => {
+        try {
+          await syncNotionSites(false);
+        } catch {
+          // Ignore sync errors in background mode.
+        } finally {
+          backgroundSyncPromise = null;
+        }
+      })();
+    }
+
+    return {
+      sites: cachedSites,
+      source: "notion" as const,
+      syncedAt: cache.syncedAt,
+    };
+  }
+
   try {
     const syncResult = await syncNotionSites(false);
     const sites = mapCachedSitesToClientSites(syncResult.cache.sites);
 
     if (sites.length > 0) {
-      try {
-        await writeBackupSnapshot(syncResult.cache);
-      } catch {
-        // Ignore backup write errors.
-      }
-
       return {
         sites,
         source: "notion" as const,

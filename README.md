@@ -1,6 +1,6 @@
-# Arcory
+# arcory
 
-Arcory 是一个面向「网站收藏 / 文章 / 插件 / 案例」的展示型项目，当前基于 Next.js + shadcn/ui 实现。
+arcory 是一个面向「网站收藏 / 文章 / 插件 / 案例」的展示型项目，当前基于 Next.js + shadcn/ui 实现。
 
 ## 技术栈
 
@@ -92,6 +92,11 @@ OPENAI_CLASSIFIER_MODEL=gpt-4.1-mini
 
 # 可选：保护手动同步接口
 NOTION_SYNC_SECRET=your-secret
+
+# 可选：截图代理磁盘缓存（毫秒）
+# 默认 30 分钟缓存、1 分钟后台校验 Notion 是否有新图
+NOTION_SCREENSHOT_PROXY_CACHE_MS=1800000
+NOTION_SCREENSHOT_PROXY_VALIDATE_MS=60000
 ```
 
 ### 2) API 能力
@@ -102,6 +107,7 @@ NOTION_SYNC_SECRET=your-secret
 - `GET /api/notion/sync`：查看同步状态
 - `POST /api/notion/sync`：触发同步（支持 `?force=1` 或 body `{ "force": true }`）
 - `POST /api/notion/sync?force=1&reclassify=1`：强制同步并全量重分类（当你调整了分类规则、子分类推断策略时使用）
+- `GET /api/notion/screenshot?pageId=<notion_page_id>`：读取 Notion 截图并返回压缩后的缓存图（用于右下角 hover 预览）
 - `GET /api/notion/classification`：查看分类锁定状态
 - `POST /api/notion/classification?action=lock`：确认当前分类结果并“固定”
 - `POST /api/notion/classification?action=unlock`：解除固定，恢复自动分类/子分类
@@ -145,6 +151,19 @@ NOTION_SYNC_SECRET=your-secret
   - 过滤单字符、纯数字和过泛词（如 `WORK`、`GENERAL`、`RESOURCES` 等噪音 token）。
   - 每条站点在候选 token 中按分数选择最优子分类，低于阈值则回退到 `tags` 或 `GENERAL`。
 - `meta` 生成：优先取前 1-2 个 tags，否则使用 `域名token•category`。
+- `screenshot` 来源：仅使用 Notion 数据库中的截图字段（你手动维护）。
+
+#### Notion 截图展示策略（当前）
+
+- 字段命名支持自动识别：`screenshot / screenshoot / preview / thumbnail / 截图 / 预览`。
+- 右下角 hover 面板只显示截图本身：
+  - 有图：展示截图
+  - 无图或加载失败：显示 `Pending`
+- 通过 `/api/notion/screenshot` 做服务端代理与压缩缓存：
+  - 首次请求：拉取 Notion 图片并压缩为 `webp`
+  - 写入磁盘缓存目录：`data/screenshot-cache/`
+  - 后续请求：直接读取磁盘缓存
+  - 后台自动检查 Notion 是否换图，换图后自动刷新缓存
 
 #### 分类固定（确认后）
 

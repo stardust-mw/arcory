@@ -15,22 +15,28 @@ function applyTheme(theme: Theme) {
   root.classList.toggle("dark", theme === "dark");
 }
 
+function getInitialTheme(): Theme {
+  if (typeof window === "undefined") return "light";
+
+  const savedTheme = window.localStorage.getItem(STORAGE_KEY);
+  if (savedTheme === "dark" || savedTheme === "light") {
+    return savedTheme;
+  }
+
+  if (window.document.documentElement.classList.contains("dark")) {
+    return "dark";
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
 export function ThemeToggle({ className }: { className?: string }) {
-  const [theme, setTheme] = useState<Theme>("light");
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem(STORAGE_KEY);
-
-    if (savedTheme === "dark" || savedTheme === "light") {
-      setTheme(savedTheme);
-      applyTheme(savedTheme);
-      return;
-    }
-
-    const preferredTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    setTheme(preferredTheme);
-    applyTheme(preferredTheme);
-  }, []);
+    applyTheme(theme);
+    window.localStorage.setItem(STORAGE_KEY, theme);
+  }, [theme]);
 
   return (
     <Button
@@ -48,8 +54,6 @@ export function ThemeToggle({ className }: { className?: string }) {
         const nextTheme: Theme = theme === "dark" ? "light" : "dark";
 
         setTheme(nextTheme);
-        applyTheme(nextTheme);
-        localStorage.setItem(STORAGE_KEY, nextTheme);
       }}
       size="icon-sm"
       type="button"

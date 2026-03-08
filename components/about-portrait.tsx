@@ -21,7 +21,7 @@ export function AboutPortrait({ className }: { className?: string }) {
           const probe = new window.Image();
           probe.onload = () => resolve(true);
           probe.onerror = () => resolve(false);
-          probe.src = `${source}?v=${Date.now()}`;
+          probe.src = source;
         });
 
         if (cancelled) return;
@@ -55,7 +55,13 @@ export function AboutPortrait({ className }: { className?: string }) {
 
   return (
     <div className={cn("relative overflow-hidden rounded-none bg-black p-0", className)}>
-      <img alt="Portrait" className="h-auto w-full object-cover [image-rendering:pixelated]" src={resolvedSrc} />
+      <img
+        alt="Portrait"
+        className="h-auto w-full object-cover [image-rendering:pixelated]"
+        decoding="async"
+        loading="lazy"
+        src={resolvedSrc}
+      />
     </div>
   );
 }

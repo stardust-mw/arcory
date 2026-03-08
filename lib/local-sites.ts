@@ -99,7 +99,7 @@ export const localSites: SavedSite[] = [
   },
   {
     id: "site-12",
-    title: "Arcory Internal Board",
+    title: "arcory Internal Board",
     meta: "project•tracking",
     clicks: 36,
     category: "PROJECT",

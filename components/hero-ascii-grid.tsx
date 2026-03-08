@@ -31,7 +31,8 @@ const GRID_ROWS = 11;
 const CELL_COUNT = GRID_COLS * GRID_ROWS;
 const GRID_ROW_HEIGHT = 30;
 const GRID_ROW_GAP = 1;
-const FRAME_INTERVAL = 1000 / 30;
+const FRAME_INTERVAL = 1000 / 18;
+const ASCII_START_DELAY_MS = 90;
 const WAVE_SCALE = 1;
 const WAVE_SPEED = 1;
 const BASE_ASCII_CHARS = ".:-+~/\\=";
@@ -40,11 +41,6 @@ type GlyphCell = {
   char: string;
   level: number;
 };
-
-const INITIAL_GLYPH_CELLS: GlyphCell[] = Array.from({ length: CELL_COUNT }, () => ({
-  char: ".",
-  level: 0.2,
-}));
 
 function hash2d(x: number, y: number) {
   const seed = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
@@ -127,17 +123,63 @@ function buildGlyphCells(timeSec: number) {
 
     cells[index] = {
       char,
-      level: value,
+      // Quantize opacity level to reduce noisy rerenders while preserving wave feel.
+      level: Math.round(value * 100) / 100,
     };
   }
 
   return cells;
 }
 
+const INITIAL_GLYPH_CELLS: GlyphCell[] = buildGlyphCells(0);
+
+function areGlyphCellsEqual(a: GlyphCell[], b: GlyphCell[]) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i].char !== b[i].char || a[i].level !== b[i].level) return false;
+  }
+  return true;
+}
+
 export function HeroAsciiGrid() {
   const [glyphCells, setGlyphCells] = useState<GlyphCell[]>(INITIAL_GLYPH_CELLS);
   const startedAtRef = useRef(0);
   const lastFrameRef = useRef(0);
+  const isVisibleRef = useRef(true);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const target = rootRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        isVisibleRef.current = Boolean(entry?.isIntersecting);
+      },
+      { threshold: 0.1 },
+    );
+
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        isVisibleRef.current = false;
+        return;
+      }
+      isVisibleRef.current = true;
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     let isActive = true;
@@ -150,11 +192,22 @@ export function HeroAsciiGrid() {
         startedAtRef.current = timestamp;
       }
 
+      if (!isVisibleRef.current) {
+        frameId = requestAnimationFrame(tick);
+        return;
+      }
+
       const sinceLastFrame = timestamp - lastFrameRef.current;
       if (sinceLastFrame >= FRAME_INTERVAL) {
         lastFrameRef.current = timestamp - (sinceLastFrame % FRAME_INTERVAL);
-        const elapsedSec = (timestamp - startedAtRef.current) / 1000;
-        setGlyphCells(buildGlyphCells(elapsedSec));
+        const elapsedMs = timestamp - startedAtRef.current;
+        if (elapsedMs < ASCII_START_DELAY_MS) {
+          frameId = requestAnimationFrame(tick);
+          return;
+        }
+        const elapsedSec = (elapsedMs - ASCII_START_DELAY_MS) / 1000;
+        const nextCells = buildGlyphCells(elapsedSec);
+        setGlyphCells((prevCells) => (areGlyphCellsEqual(prevCells, nextCells) ? prevCells : nextCells));
       }
 
       frameId = requestAnimationFrame(tick);
@@ -168,7 +221,7 @@ export function HeroAsciiGrid() {
   }, []);
 
   return (
-    <div className="relative h-[340px] w-full max-w-[640px]">
+    <div className="relative h-[340px] w-full max-w-[640px]" ref={rootRef}>
       <div className="absolute inset-0 m-0 overflow-hidden bg-card">
         <div className="grid h-full grid-cols-20 grid-rows-[repeat(11,30px)] gap-y-px">
           {glyphCells.map((cell, index) => (
@@ -193,10 +246,19 @@ export function HeroAsciiGrid() {
         >
           <TextScramble
             className="text-[14px] font-medium text-foreground"
+            durationMs={900}
             replayOnReenter
+            startOnView={false}
             text="Collect. Explore. Create."
           />
-          <TextScramble className="text-[12px] text-muted-foreground" replayOnReenter startDelayMs={200} text="Atlas" />
+          <TextScramble
+            className="text-[12px] text-muted-foreground"
+            durationMs={800}
+            replayOnReenter
+            startDelayMs={90}
+            startOnView={false}
+            text="Atlas"
+          />
         </div>
       </div>
     </div>

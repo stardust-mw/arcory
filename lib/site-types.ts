@@ -19,6 +19,7 @@ export type SavedSite = {
   category: SiteCategory;
   subcategory?: string;
   url?: string;
+  screenshot?: string;
   source?: "local" | "notion";
   updatedAt?: string;
 };

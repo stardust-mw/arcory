@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { HeroAsciiGrid } from "@/components/hero-ascii-grid";
 import { IdenticonAvatar } from "@/components/identicon-avatar";
 import { ListEmptyState } from "@/components/list-empty-state";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { categories, siteCategories, type Category, type SavedSite, type SiteCategory } from "@/lib/site-types";
@@ -29,12 +29,16 @@ type HoverPreviewItem = {
   url: string;
   host: string;
   meta: string;
+  screenshotUrl?: string;
 };
 
-const screenshotStatusCache = new Map<string, "ready" | "error">();
+const screenshotStatusCache = new Map<string, "ready">();
 const faviconStatusCache = new Map<string, "ready" | "error">();
 const INITIAL_SITES_LIMIT = 24;
 const BACKGROUND_SITES_LIMIT = 48;
+const SITES_CACHE_KEY = "arcory-sites-cache-v1";
+const LIST_BOOT_DELAY_MS = 240;
+const LIST_REVEAL_DELAY_MS = 520;
 
 function normalizeSiteUrl(value?: string) {
   if (!value) return "";
@@ -58,12 +62,6 @@ function getSiteHost(value?: string) {
   } catch {
     return "";
   }
-}
-
-function buildScreenshotPreviewUrl(url: string) {
-  const normalized = normalizeSiteUrl(url);
-  if (!normalized) return "";
-  return `https://image.thum.io/get/width/960/noanimate/${encodeURIComponent(normalized)}`;
 }
 
 function buildFaviconCandidates(host: string) {
@@ -157,35 +155,48 @@ function buildHoverPreviewItem(site: SavedSite): HoverPreviewItem | null {
   const normalizedUrl = normalizeSiteUrl(site.url);
   if (!normalizedUrl) return null;
 
+  const notionScreenshotProxy =
+    site.source === "notion"
+      ? `/api/notion/screenshot?pageId=${encodeURIComponent(site.id)}`
+      : undefined;
+
   return {
     id: site.id,
     title: site.title,
     url: normalizedUrl,
     host: getSiteHost(normalizedUrl),
     meta: site.meta,
+    screenshotUrl: notionScreenshotProxy || normalizeSiteUrl(site.screenshot) || undefined,
   };
 }
 
 function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; className?: string }) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const screenshotUrl = buildScreenshotPreviewUrl(item.url);
-  const faviconUrl = buildFaviconCandidates(item.host)[0] ?? "";
-  const shouldRequestScreenshot = Boolean(screenshotUrl && status !== "error");
-  const metaTokens = item.meta
-    .split("•")
-    .map((token) => token.trim())
-    .filter(Boolean)
-    .slice(0, 2);
+  const screenshotUrl = item.screenshotUrl ?? "";
+  const hasScreenshot = Boolean(screenshotUrl);
+  const shouldRequestScreenshot = hasScreenshot && status !== "error";
 
   useEffect(() => {
-    if (!screenshotUrl) {
+    if (!hasScreenshot) {
       setStatus("error");
       return;
     }
 
     const cached = screenshotStatusCache.get(screenshotUrl);
-    setStatus(cached ?? "loading");
-  }, [screenshotUrl]);
+    setStatus(cached === "ready" ? "ready" : "loading");
+  }, [hasScreenshot, screenshotUrl]);
+
+  useEffect(() => {
+    if (!shouldRequestScreenshot || status !== "loading") return;
+
+    const timeoutId = window.setTimeout(() => {
+      setStatus("error");
+    }, 90000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [shouldRequestScreenshot, status]);
 
   return (
     <aside
@@ -199,28 +210,6 @@ function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; classN
         <p className="ml-3 shrink-0 text-[11px] text-muted-foreground">{item.host}</p>
       </div>
       <div className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-muted/70 via-muted/35 to-card">
-        <div className="absolute inset-0 flex flex-col justify-between p-3">
-          <div className="flex items-center gap-2">
-            {faviconUrl ? (
-              <img
-                alt=""
-                className="size-4 shrink-0 rounded-sm opacity-85"
-                onError={(event) => {
-                  (event.currentTarget as HTMLImageElement).style.display = "none";
-                }}
-                src={faviconUrl}
-              />
-            ) : null}
-            <p className="truncate text-[11px] text-foreground/90">{item.host}</p>
-          </div>
-          <div>
-            <p className="line-clamp-2 text-[13px] text-foreground">{item.title}</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              {metaTokens.length > 0 ? metaTokens.join(" • ") : "Open in new tab"}
-            </p>
-          </div>
-        </div>
-
         {shouldRequestScreenshot ? (
           <img
             alt=""
@@ -228,8 +217,9 @@ function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; classN
               "absolute inset-0 h-full w-full object-cover transition-opacity duration-200",
               status === "ready" ? "opacity-100" : "opacity-0",
             )}
+            decoding="async"
+            loading="eager"
             onError={() => {
-              screenshotStatusCache.set(screenshotUrl, "error");
               setStatus("error");
             }}
             onLoad={() => {
@@ -241,8 +231,13 @@ function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; classN
         ) : null}
 
         {status === "loading" ? (
-          <div className="absolute right-2 bottom-2 rounded-none bg-background/85 px-1.5 py-1 text-[10px] text-muted-foreground">
+          <div className="absolute inset-0 flex items-center justify-center text-[11px] text-muted-foreground">
             Loading preview...
+          </div>
+        ) : null}
+        {!hasScreenshot || status === "error" ? (
+          <div className="absolute inset-0 flex items-center justify-center text-[11px] text-muted-foreground">
+            Pending
           </div>
         ) : null}
       </div>
@@ -331,6 +326,7 @@ function SavedSiteRow({
 }
 
 export default function Home() {
+  const router = useRouter();
   const [activeCategory, setActiveCategory] = useState<Category>("ALL");
   const [activeSubcategory, setActiveSubcategory] = useState("ALL");
   const [keyword, setKeyword] = useState("");
@@ -338,8 +334,19 @@ export default function Home() {
   const [isLoadingSites, setIsLoadingSites] = useState(true);
   const [isHydratingSites, setIsHydratingSites] = useState(false);
   const [hasMoreSites, setHasMoreSites] = useState(false);
+  const [isListUiVisible, setIsListUiVisible] = useState(false);
   const [activePreview, setActivePreview] = useState<HoverPreviewItem | null>(null);
   const buttonRefs = useRef<Partial<Record<Category, HTMLButtonElement | null>>>({});
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      setIsListUiVisible(true);
+    }, LIST_REVEAL_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -394,7 +401,24 @@ export default function Home() {
     };
 
     const fetchSites = async () => {
-      setIsLoadingSites(true);
+      let seeded = false;
+      try {
+        const cachedRaw = sessionStorage.getItem(SITES_CACHE_KEY);
+        if (cachedRaw) {
+          const cachedSites = JSON.parse(cachedRaw) as SavedSite[];
+          if (Array.isArray(cachedSites) && cachedSites.length > 0) {
+            setSites(cachedSites);
+            setIsLoadingSites(false);
+            seeded = true;
+          }
+        }
+      } catch {
+        // Ignore local cache parse failures.
+      }
+
+      if (!seeded) {
+        setIsLoadingSites(true);
+      }
       setIsHydratingSites(false);
       setHasMoreSites(false);
       try {
@@ -406,6 +430,11 @@ export default function Home() {
         if (cancelled) return;
 
         setSites(data.sites);
+        try {
+          sessionStorage.setItem(SITES_CACHE_KEY, JSON.stringify(data.sites));
+        } catch {
+          // Ignore storage quota errors.
+        }
 
         const nextHasMore = Boolean(data.hasMore);
         setHasMoreSites(nextHasMore);
@@ -421,10 +450,31 @@ export default function Home() {
       }
     };
 
-    void fetchSites();
+    const fetchTimerId = window.setTimeout(() => {
+      void fetchSites();
+    }, LIST_BOOT_DELAY_MS);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(fetchTimerId);
+    };
+  }, []);
+
+  useEffect(() => {
+    router.prefetch("/about");
+  }, [router]);
+
+  useEffect(() => {
+    const warmAboutRoute = () => {
+      void fetch("/about", { cache: "force-cache" }).catch(() => {});
+      const poster = new window.Image();
+      poster.src = "/black-hole-poster.jpg";
+    };
+
+    const timerId = window.setTimeout(() => warmAboutRoute(), 400);
+
+    return () => {
+      window.clearTimeout(timerId);
     };
   }, []);
 
@@ -475,6 +525,15 @@ export default function Home() {
   }, [activeCategory, activeSubcategory, keyword, sites]);
 
   useEffect(() => {
+    if (sites.length === 0) return;
+    try {
+      sessionStorage.setItem(SITES_CACHE_KEY, JSON.stringify(sites));
+    } catch {
+      // Ignore storage quota errors.
+    }
+  }, [sites]);
+
+  useEffect(() => {
     if (!activePreview) return;
     const stillInCurrentResult = filteredSites.some((site) => site.id === activePreview.id);
     if (!stillInCurrentResult) {
@@ -514,15 +573,12 @@ export default function Home() {
             <span className="text-[16px] leading-none">Arcory</span>
           </Link>
           <div className="flex items-center gap-3">
-            <Button
-              asChild
-              className="hover:bg-transparent focus-visible:bg-transparent active:bg-transparent"
-              size="sm"
-              type="button"
-              variant="ghost"
+            <Link
+              className="text-sm text-foreground transition-colors hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              href="/about"
             >
-              <Link href="/about">About</Link>
-            </Button>
+              About
+            </Link>
             <ThemeToggle />
           </div>
         </header>
@@ -532,6 +588,8 @@ export default function Home() {
         </section>
 
         <section className="mt-9">
+          {isListUiVisible ? (
+            <>
           <div className="sticky top-0 z-20 -mx-1 bg-card/95 px-1 pt-2 pb-2 backdrop-blur supports-[backdrop-filter]:bg-card/80">
             <div
               aria-label="Site categories"
@@ -631,6 +689,14 @@ export default function Home() {
                 ? `${filteredSites.length} Saves · Syncing more...`
                 : `${filteredSites.length} Saves`}
           </div>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div className="h-7 w-48 animate-pulse rounded-none bg-muted/70" />
+              <div className="h-8 w-full animate-pulse rounded-none bg-muted/60" />
+              <div className="h-32 w-full animate-pulse rounded-none bg-muted/50" />
+            </div>
+          )}
         </section>
 
         <footer className="mt-auto">

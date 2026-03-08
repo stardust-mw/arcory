@@ -18,7 +18,7 @@ export function IdenticonTriangleMark({
 
   return (
     <Image
-      alt="Arcory mark"
+      alt="arcory mark"
       className={cn("shrink-0 object-contain", className)}
       height={size}
       src={src}

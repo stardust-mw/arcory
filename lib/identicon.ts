@@ -41,7 +41,7 @@
  *
  * 5) 组件调用关系
  * - IdenticonAvatar 只调用 createIdenticonDataUrl（列表头像）
- * - 顶部 Arcory logo 只调用 createChromaticAberrationTriangleDataUrl
+ * - 顶部 arcory logo 只调用 createChromaticAberrationTriangleDataUrl
  * - 两者参数与渲染互相独立，修改 logo 不会影响头像
  */
 const BAYER_2X2 = [

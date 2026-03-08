@@ -196,7 +196,7 @@ async function extractThemeFromManifest(pageUrl: string, html: string) {
   try {
     const response = await fetch(manifestUrl, {
       headers: {
-        "User-Agent": "Arcory Preview Theme Bot/1.0",
+        "User-Agent": "arcory Preview Theme Bot/1.0",
       },
       cache: "no-store",
     });
@@ -238,7 +238,7 @@ export async function GET(request: Request) {
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Arcory Preview Theme Bot/1.0",
+        "User-Agent": "arcory Preview Theme Bot/1.0",
       },
       signal: controller.signal,
       cache: "no-store",
