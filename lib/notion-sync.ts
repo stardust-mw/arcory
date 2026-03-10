@@ -6,7 +6,8 @@ import { categorySet, siteCategories, type SavedSite, type SiteCategory } from "
 const NOTION_API_BASE = "https://api.notion.com/v1";
 const NOTION_VERSION = "2022-06-28";
 const NOTION_FILE_UPLOAD_VERSION = process.env.NOTION_FILE_UPLOAD_VERSION ?? "2025-09-03";
-const DATA_DIR = path.join(process.cwd(), "data");
+const DATA_DIR =
+  process.env.ARCORY_DATA_DIR?.trim() || (process.env.VERCEL ? "/tmp/arcory-data" : path.join(process.cwd(), "data"));
 const CACHE_FILE = path.join(DATA_DIR, "notion-sites-cache.json");
 const BACKUP_FILE = path.join(DATA_DIR, "notion-sites-backup.json");
 const LOCK_FILE = path.join(DATA_DIR, "notion-classification-lock.json");

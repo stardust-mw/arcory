@@ -18,7 +18,9 @@ const WEBP_QUALITY =
   Number.parseInt(process.env.NOTION_SCREENSHOT_PROXY_WEBP_QUALITY ?? "", 10) || 48;
 const WEBP_EFFORT =
   Number.parseInt(process.env.NOTION_SCREENSHOT_PROXY_WEBP_EFFORT ?? "", 10) || 6;
-const CACHE_DIR = path.join(process.cwd(), "data", "screenshot-cache");
+const DATA_DIR =
+  process.env.ARCORY_DATA_DIR?.trim() || (process.env.VERCEL ? "/tmp/arcory-data" : path.join(process.cwd(), "data"));
+const CACHE_DIR = path.join(DATA_DIR, "screenshot-cache");
 const CACHE_INDEX_FILE = path.join(CACHE_DIR, "index.json");
 const PUBLIC_CACHE_DIR = path.join(process.cwd(), "public", "screenshot-cache");
 
