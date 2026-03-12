@@ -70,9 +70,9 @@ function buildFaviconCandidates(host: string) {
   if (!host) return [];
 
   return [
-    `https://${host}/favicon.ico`,
-    `https://${host}/favicon.png`,
     `https://${host}/apple-touch-icon.png`,
+    `https://${host}/favicon.png`,
+    `https://${host}/favicon.ico`,
   ];
 }
 
