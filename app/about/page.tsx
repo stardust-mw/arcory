@@ -44,9 +44,9 @@ export default function AboutPage() {
             </div>
 
             <div className="mt-9 flex gap-4">
-              <div aria-hidden className="hidden h-[420px] w-px shrink-0 bg-border sm:block sm:h-[600px]" />
+              <div aria-hidden className="hidden w-px shrink-0 self-stretch bg-border sm:block" />
 
-              <div className="flex min-h-[420px] flex-col sm:min-h-[600px]">
+              <div className="flex min-h-[420px] min-w-0 flex-1 flex-col gap-10 sm:min-h-[600px]">
                 <div className="space-y-6">
                   <div className="space-y-2 font-mono text-[16px] leading-7 tracking-[0.01em] text-foreground">
                     <p>Collect.</p>
@@ -81,7 +81,7 @@ export default function AboutPage() {
                   </p>
                 </div>
 
-                <div className="mt-auto space-y-1 text-[12px] text-muted-foreground">
+                <div className="mt-auto w-full space-y-1 text-[12px] text-muted-foreground">
                   <p>Reference</p>
                   <p>
                     Avatar:{" "}
@@ -106,14 +106,14 @@ export default function AboutPage() {
                     </a>
                   </p>
                 </div>
+
+                <section className="mt-0 w-full space-y-1">
+                  <p className="text-[11px] tracking-[0.08em] text-muted-foreground">Hubble Ultra Deep Field</p>
+                  <AboutGalaxyGrid className="w-full" />
+                </section>
               </div>
             </div>
           </div>
-        </section>
-
-        <section className="mt-12 mb-10 space-y-4 sm:mt-20 sm:mb-16">
-          <p className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">GALAXY</p>
-          <AboutGalaxyGrid className="w-full" />
         </section>
 
         <footer className="mt-auto">
