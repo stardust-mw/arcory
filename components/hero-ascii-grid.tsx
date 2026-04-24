@@ -222,7 +222,7 @@ export function HeroAsciiGrid() {
 
   return (
     <div className="relative h-[340px] w-full max-w-[640px]" ref={rootRef}>
-      <div className="absolute inset-0 m-0 overflow-hidden bg-card">
+      <div className="arcory-hero-grid absolute inset-0 m-0 overflow-hidden bg-card">
         <div className="grid h-full grid-cols-20 grid-rows-[repeat(11,30px)] gap-y-px">
           {glyphCells.map((cell, index) => (
             <div
@@ -238,7 +238,7 @@ export function HeroAsciiGrid() {
 
       <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center [contain:paint]">
         <div
-          className="relative flex flex-col items-center justify-center gap-1 bg-card text-center text-foreground"
+          className="arcory-hero-copy relative flex flex-col items-center justify-center gap-1 bg-card text-center text-foreground"
           style={{
             width: "calc((100% / 20) * 12)",
             height: `${GRID_ROW_HEIGHT * 3 + GRID_ROW_GAP * 2}px`,

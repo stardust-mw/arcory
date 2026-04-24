@@ -1,7 +1,15 @@
 import type { Metadata } from "next";
-import { GeistMono } from "geist/font/mono";
+import localFont from "next/font/local";
+
+import { SiteModeProvider } from "@/components/site-mode-provider";
 
 import "./globals.css";
+
+const fragmentMono = localFont({
+  src: "./fonts/FragmentMono-Regular.ttf",
+  variable: "--font-fragment-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Arcory",
@@ -14,8 +22,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${GeistMono.variable} antialiased`}>{children}</body>
+    <html className="arcory-mode-day" data-site-mode="day" lang="en">
+      <body className={`${fragmentMono.variable} antialiased`}>
+        <SiteModeProvider>{children}</SiteModeProvider>
+      </body>
     </html>
   );
 }

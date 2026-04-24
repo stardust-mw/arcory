@@ -2,13 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
-import { HeroAsciiGrid } from "@/components/hero-ascii-grid";
 import { IdenticonAvatar } from "@/components/identicon-avatar";
 import { ListEmptyState } from "@/components/list-empty-state";
 import { Input } from "@/components/ui/input";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { categories, siteCategories, type Category, type SavedSite, type SiteCategory } from "@/lib/site-types";
 import { cn } from "@/lib/utils";
 
@@ -202,15 +199,11 @@ function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; classN
   return (
     <aside
       className={cn(
-        "pointer-events-none w-[320px] overflow-hidden rounded-none border border-border bg-card shadow-2xl",
+        "pointer-events-none overflow-hidden rounded-none border border-border bg-card",
         className,
       )}
     >
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <p className="truncate text-xs text-foreground">{item.title}</p>
-        <p className="ml-3 shrink-0 text-[11px] text-muted-foreground">{item.host}</p>
-      </div>
-      <div className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-muted/70 via-muted/35 to-card">
+      <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-muted/70 via-muted/35 to-card">
         {shouldRequestScreenshot ? (
           <img
             alt=""
@@ -241,6 +234,30 @@ function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; classN
             Pending
           </div>
         ) : null}
+      </div>
+    </aside>
+  );
+}
+
+function IdlePreviewPanel({ category, keyword, total }: { category: Category; keyword: string; total: number }) {
+  const label = keyword.trim() ? `Search: ${keyword.trim()}` : category === "ALL" ? "All sites" : category;
+
+  return (
+    <aside className="overflow-hidden rounded-none border border-border bg-card">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2 text-[11px] text-muted-foreground">
+        <span>Preview</span>
+        <span>{label}</span>
+      </div>
+      <div className="flex aspect-[4/3] flex-col justify-between bg-gradient-to-br from-muted/65 via-muted/25 to-card p-5">
+        <div className="space-y-2.5">
+          <p className="text-sm text-foreground">Hover a site to inspect its screenshot.</p>
+          <p className="max-w-[28ch] text-xs leading-5 text-muted-foreground">
+            The right column is reserved for the active preview so the middle list can stay dense and readable.
+          </p>
+        </div>
+        <div className="border-t border-border/80 pt-4 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+          {total} entries ready
+        </div>
       </div>
     </aside>
   );
@@ -299,7 +316,7 @@ function SavedSiteRow({
   return (
     <button
       className={cn(
-        "group flex w-full cursor-pointer items-center gap-2 rounded-sm px-1 py-3 text-left text-xs transition-colors duration-150 hover:bg-muted/50",
+        "arcory-site-row group flex w-full cursor-pointer items-center gap-2.5 rounded-none border-b border-border/55 px-1 py-2.5 text-left text-[12px] transition-colors duration-150 hover:bg-muted/85",
         !targetUrl && "cursor-not-allowed opacity-60",
       )}
       disabled={!targetUrl}
@@ -314,10 +331,10 @@ function SavedSiteRow({
         &gt;
       </div>
       <SiteListAvatar host={targetHost} seed={site.title} />
-      <div className="flex min-w-0 flex-1 items-start justify-between gap-4 pl-0">
-        <div className="min-w-0">
-          <p className="truncate text-foreground">{site.title}</p>
-          <p className="truncate text-[11px] text-muted-foreground">
+      <div className="flex min-w-0 flex-1 items-start pl-0">
+        <div className="min-w-0 space-y-0.5">
+          <p className="truncate text-[14px] text-foreground">{site.title}</p>
+          <p className="truncate text-[10px] leading-4 text-muted-foreground">
             {metaTokens.map((item, index) => (
               <span key={`${site.id}-${item}`}>
                 {index > 0 ? <span className="px-1">•</span> : null}
@@ -326,16 +343,12 @@ function SavedSiteRow({
             ))}
           </p>
         </div>
-        <p className="shrink-0 self-center text-muted-foreground transition-colors duration-150 group-hover:text-foreground">
-          {site.clicks} Clicks
-        </p>
       </div>
     </button>
   );
 }
 
 export default function Home() {
-  const router = useRouter();
   const [activeCategory, setActiveCategory] = useState<Category>("ALL");
   const [activeSubcategory, setActiveSubcategory] = useState("ALL");
   const [keyword, setKeyword] = useState("");
@@ -470,24 +483,6 @@ export default function Home() {
     };
   }, []);
 
-  useEffect(() => {
-    router.prefetch("/about");
-  }, [router]);
-
-  useEffect(() => {
-    const warmAboutRoute = () => {
-      void fetch("/about", { cache: "force-cache" }).catch(() => {});
-      const poster = new window.Image();
-      poster.src = "/black-hole-poster.jpg";
-    };
-
-    const timerId = window.setTimeout(() => warmAboutRoute(), 400);
-
-    return () => {
-      window.clearTimeout(timerId);
-    };
-  }, []);
-
   const subcategoriesByCategory = useMemo(() => {
     const grouped = Object.fromEntries(
       siteCategories.map((category) => [category, new Set<string>()]),
@@ -532,9 +527,16 @@ export default function Home() {
 
       return categoryMatched && subcategoryMatched && keywordMatched;
     });
-  }, [activeCategory, activeSubcategory, keyword, sites]);
+}, [activeCategory, activeSubcategory, keyword, sites]);
 
-  useEffect(() => {
+const fallbackPreview = useMemo(
+  () => filteredSites.map((site) => buildHoverPreviewItem(site)).find((item): item is HoverPreviewItem => item !== null) ?? null,
+  [filteredSites],
+);
+
+const displayPreview = activePreview ?? fallbackPreview;
+
+useEffect(() => {
     if (sites.length === 0) return;
     try {
       sessionStorage.setItem(SITES_CACHE_KEY, JSON.stringify(sites));
@@ -602,161 +604,161 @@ export default function Home() {
     !isLoadingSites && activeCategory !== "ALL" && categoryCounts[activeCategory] === 0 && keyword.trim().length === 0;
 
   return (
-    <main className="min-h-[100dvh] bg-background">
-      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[768px] flex-col bg-card px-4 pt-8 pb-8 sm:px-16 sm:pt-9 sm:pb-16">
-        <header className="flex items-center justify-between text-sm">
-          <Link className="flex items-center gap-1.5 text-foreground transition-colors hover:text-foreground/80" href="/">
-            <IdenticonAvatar
-              className="size-4"
-              monoChroma={0}
-              monoLightnessHigh={0.84}
-              monoLightnessLow={0.12}
-              seed="arcory-logo"
-              size={16}
-              variant="bayer-4x4-mono-oklch"
-            />
-            <span className="text-[16px] leading-none">Arcory</span>
-          </Link>
-          <div className="flex items-center gap-3">
-            <Link
-              className="text-sm text-foreground transition-colors hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              href="/about"
-            >
-              About
-            </Link>
-            <ThemeToggle />
-          </div>
-        </header>
+    <main className="arcory-page-shell min-h-[100dvh] bg-background">
+      <div className="arcory-chaos-panel min-h-[100dvh] bg-card lg:grid lg:min-h-[100dvh] lg:grid-cols-[250px_minmax(0,480px)_510px] lg:justify-center xl:grid-cols-[280px_minmax(0,520px)_550px]">
+<div className="px-6 pt-6 lg:min-h-[100dvh] lg:border-r lg:border-border/80 lg:px-0 lg:pr-6 lg:pt-6">
+  <aside className="lg:sticky lg:top-6">
+    <Link
+      className="flex items-center gap-2 text-foreground transition-colors hover:text-foreground/80"
+      href="/"
+    >
+      <IdenticonAvatar
+        className="size-5"
+        monoChroma={0}
+        monoLightnessHigh={0.84}
+        monoLightnessLow={0.12}
+        seed="arcory-logo"
+        size={20}
+        variant="bayer-4x4-mono-oklch"
+      />
+      <span className="text-lg leading-none">Arcory</span>
+    </Link>
+  </aside>
+</div>
 
-        <section className="mt-10 flex justify-center sm:mt-12">
-          <HeroAsciiGrid />
-        </section>
+{isListUiVisible ? (
 
-        <section className="mt-8 sm:mt-9">
-          {isListUiVisible ? (
-            <>
-          <div className="sticky top-0 z-20 -mx-1 bg-card/95 px-1 pt-2 pb-2 backdrop-blur supports-[backdrop-filter]:bg-card/80">
-            <div
-              aria-label="Site categories"
-              className="flex flex-wrap items-center gap-2 text-[13px] text-foreground"
-              role="tablist"
-            >
-              {categories.map((category) => (
-                <button
-                  aria-selected={activeCategory === category}
-                  className={cn(
-                    "cursor-pointer rounded-none px-1.5 py-1 leading-none transition-colors duration-150",
-                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                    "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
-                    activeCategory === category &&
-                      "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80 dark:hover:text-secondary-foreground dark:active:bg-secondary/70 dark:active:text-secondary-foreground",
-                  )}
-                  key={category}
-                  onClick={() => {
-                    setActiveSubcategory("ALL");
-                    setActiveCategory(category);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "ArrowRight") {
-                      event.preventDefault();
-                      switchCategoryByArrow(category, 1);
-                    }
-
-                    if (event.key === "ArrowLeft") {
-                      event.preventDefault();
-                      switchCategoryByArrow(category, -1);
-                    }
-                  }}
-                  ref={(node) => {
-                    buttonRefs.current[category] = node;
-                  }}
-                  role="tab"
-                  type="button"
-                >
-                  {category}
-                </button>
-              ))}
-            </div>
-
-            {activeCategory !== "ALL" ? (
-              <div aria-label={`${activeCategory} subcategories`} className="no-scrollbar mt-2 overflow-x-auto">
-                <div className="inline-flex items-center gap-2 whitespace-nowrap bg-muted px-1 py-1">
-                  {subcategoriesByCategory[activeCategory].map((subcategory) => (
-                    <button
-                      aria-pressed={activeSubcategory === subcategory}
-                      className={cn(
-                        "cursor-pointer rounded-none px-1.5 py-1 text-[11px] leading-none transition-colors duration-150",
-                        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                        "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
-                        activeSubcategory === subcategory &&
-                          "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80 dark:hover:text-secondary-foreground dark:active:bg-secondary/70 dark:active:text-secondary-foreground",
-                      )}
-                      key={subcategory}
-                      onClick={() =>
-                        setActiveSubcategory((current) => (current === subcategory ? "ALL" : subcategory))
-                      }
-                      type="button"
-                    >
-                      {subcategory}
-                    </button>
-                  ))}
-                </div>
+          <div className="px-6 lg:hidden">
+                {displayPreview ? (
+                  <HoverPreviewPanel className="w-full" item={displayPreview} />
+                ) : (
+                  <IdlePreviewPanel category={activeCategory} keyword={keyword} total={filteredSites.length} />
+                )}
               </div>
             ) : null}
 
-            <Input
-              aria-label="Search saved websites"
-              className="mt-3 mb-1 h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none focus-visible:ring-0"
-              placeholder="Search"
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-            />
-          </div>
+        <section className="min-w-0 px-6 pb-6 lg:min-h-[100dvh] lg:px-6 lg:pt-6">
+              <div className="mx-auto flex h-full w-full max-w-[480px] flex-col">
+                <section className="flex-1">
+                  {isListUiVisible ? (
+                    <>
+                      <div className="sticky top-6 z-20 bg-card pb-4 before:pointer-events-none before:absolute before:-top-6 before:left-0 before:block before:h-6 before:w-full before:bg-card before:content-['']">
+                        <div aria-label="Site categories" className="flex flex-wrap items-center gap-2 text-[13px]" role="tablist">
+                          {categories.map((category) => (
+                            <button
+                              aria-selected={activeCategory === category}
+                              className={cn(
+                                "cursor-pointer rounded-none px-1.5 py-1 leading-none transition-colors duration-150",
+                                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+                                "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
+                                activeCategory === category &&
+                                  "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80 dark:hover:text-secondary-foreground dark:active:bg-secondary/70 dark:active:text-secondary-foreground",
+                              )}
+                              key={category}
+                              onClick={() => {
+                                setActiveSubcategory("ALL");
+                                setActiveCategory(category);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "ArrowRight") {
+                                  event.preventDefault();
+                                  switchCategoryByArrow(category, 1);
+                                }
 
-          <div className="mt-1">
-            {isLoadingSites ? (
-              <LoadingSiteRows />
-            ) : isCategoryEmpty ? (
-              <ListEmptyState category={activeCategory} mode="category" />
-            ) : filteredSites.length > 0 ? (
-              filteredSites.map((site) => (
-                <SavedSiteRow key={site.id} onPreviewChange={setActivePreview} site={site} />
-              ))
-            ) : (
-              <ListEmptyState category={activeCategory} mode="search" />
-            )}
-          </div>
+                                if (event.key === "ArrowLeft") {
+                                  event.preventDefault();
+                                  switchCategoryByArrow(category, -1);
+                                }
+                              }}
+                              ref={(node) => {
+                                buttonRefs.current[category] = node;
+                              }}
+                              role="tab"
+                              type="button"
+                            >
+                              {category}
+                            </button>
+                          ))}
+                        </div>
 
-          <div className="py-4 text-center text-xs uppercase tracking-[0.06em] text-foreground">
-            {isLoadingSites
-              ? "Loading..."
-              : isHydratingSites || hasMoreSites
-                ? `${filteredSites.length} Saves · Syncing more...`
-                : `${filteredSites.length} Saves`}
-          </div>
-            </>
-          ) : (
-            <div className="space-y-3">
-              <div className="h-7 w-48 animate-pulse rounded-none bg-muted/70" />
-              <div className="h-8 w-full animate-pulse rounded-none bg-muted/60" />
-              <div className="h-32 w-full animate-pulse rounded-none bg-muted/50" />
+                        {activeCategory !== "ALL" ? (
+                          <div aria-label={`${activeCategory} subcategories`} className="no-scrollbar mt-2 overflow-x-auto">
+                            <div className="inline-flex items-center gap-2 whitespace-nowrap bg-muted px-1 py-1">
+                              {subcategoriesByCategory[activeCategory].map((subcategory) => (
+                                <button
+                                  aria-pressed={activeSubcategory === subcategory}
+                                  className={cn(
+                                    "cursor-pointer rounded-none px-1.5 py-1 text-[11px] leading-none transition-colors duration-150",
+                                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+                                    "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
+                                    activeSubcategory === subcategory &&
+                                      "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80 dark:hover:text-secondary-foreground dark:active:bg-secondary/70 dark:active:text-secondary-foreground",
+                                  )}
+                                  key={subcategory}
+                                  onClick={() =>
+                                    setActiveSubcategory((current) => (current === subcategory ? "ALL" : subcategory))
+                                  }
+                                  type="button"
+                                >
+                                  {subcategory}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <Input
+                          aria-label="Search saved websites"
+                          className="mt-3 h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none focus-visible:ring-0"
+                          placeholder="Search"
+                          value={keyword}
+                          onChange={(event) => setKeyword(event.target.value)}
+                        />
+                      </div>
+
+                      <div className="mt-1">
+                        {isLoadingSites ? (
+                          <LoadingSiteRows />
+                        ) : isCategoryEmpty ? (
+                          <ListEmptyState category={activeCategory} mode="category" />
+                        ) : filteredSites.length > 0 ? (
+                          filteredSites.map((site) => (
+                            <SavedSiteRow key={site.id} onPreviewChange={setActivePreview} site={site} />
+                          ))
+                        ) : (
+                          <ListEmptyState category={activeCategory} mode="search" />
+                        )}
+                      </div>
+
+                      <div className="py-4 text-center text-xs uppercase tracking-[0.06em] text-foreground">
+                        {isLoadingSites
+                          ? "Loading..."
+                          : isHydratingSites || hasMoreSites
+                            ? `${filteredSites.length} Saves · Syncing more...`
+                            : `${filteredSites.length} Saves`}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="h-7 w-48 animate-pulse rounded-none bg-muted/70" />
+                      <div className="h-8 w-full animate-pulse rounded-none bg-muted/60" />
+                      <div className="h-32 w-full animate-pulse rounded-none bg-muted/50" />
+                    </div>
+                  )}
+                </section>
+              </div>
+            </section>
+
+        <div className="hidden lg:block lg:min-h-[100dvh] lg:border-l lg:border-border/80 lg:pl-6 lg:pt-6">
+              <aside className="sticky top-6 space-y-4">
+                {displayPreview ? (
+                  <HoverPreviewPanel className="w-full" item={displayPreview} />
+                ) : (
+                  <IdlePreviewPanel category={activeCategory} keyword={keyword} total={filteredSites.length} />
+                )}
+              </aside>
             </div>
-          )}
-        </section>
-
-        <footer className="mt-auto">
-          <div className="flex items-center gap-4 pt-8 pb-0 sm:pt-9">
-            <div className="h-px flex-1 bg-border" />
-            <p className="text-xs uppercase tracking-[0.06em] text-foreground">Archive + story</p>
-            <div className="h-px flex-1 bg-border" />
-          </div>
-        </footer>
       </div>
-      {activePreview ? (
-        <div className="pointer-events-none fixed right-6 bottom-6 z-40 hidden lg:block">
-          <HoverPreviewPanel className="rounded-none shadow-2xl" item={activePreview} />
-        </div>
-      ) : null}
     </main>
   );
 }
