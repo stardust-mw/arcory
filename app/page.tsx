@@ -299,7 +299,7 @@ function SavedSiteRow({
   return (
     <button
       className={cn(
-        "group flex w-full cursor-pointer items-center gap-2 rounded-sm px-1 py-3 text-left text-xs transition-colors duration-150 hover:bg-muted/50",
+        "group flex w-full cursor-pointer items-center gap-2 rounded-sm px-1 py-3 text-left text-xs transition-colors duration-150 hover:bg-muted",
         !targetUrl && "cursor-not-allowed opacity-60",
       )}
       disabled={!targetUrl}
@@ -602,8 +602,8 @@ export default function Home() {
     !isLoadingSites && activeCategory !== "ALL" && categoryCounts[activeCategory] === 0 && keyword.trim().length === 0;
 
   return (
-    <main className="min-h-[100dvh] bg-background">
-      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[768px] flex-col bg-card px-4 pt-8 pb-8 sm:px-16 sm:pt-9 sm:pb-16">
+    <main className="arcory-page-shell min-h-[100dvh] bg-background">
+      <div className="arcory-chaos-panel mx-auto flex min-h-[100dvh] w-full max-w-[768px] flex-col bg-card px-4 pt-8 pb-8 sm:px-16 sm:pt-9 sm:pb-16">
         <header className="flex items-center justify-between text-sm">
           <Link className="flex items-center gap-1.5 text-foreground transition-colors hover:text-foreground/80" href="/">
             <IdenticonAvatar
@@ -635,7 +635,7 @@ export default function Home() {
         <section className="mt-8 sm:mt-9">
           {isListUiVisible ? (
             <>
-          <div className="sticky top-0 z-20 -mx-1 bg-card/95 px-1 pt-2 pb-2 backdrop-blur supports-[backdrop-filter]:bg-card/80">
+          <div className="arcory-summer-toolbar sticky top-0 z-20 -mx-1 bg-card/95 px-1 pt-2 pb-2 backdrop-blur supports-[backdrop-filter]:bg-card/80">
             <div
               aria-label="Site categories"
               className="flex flex-wrap items-center gap-2 text-[13px] text-foreground"

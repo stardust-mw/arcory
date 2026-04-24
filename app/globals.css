@@ -78,6 +78,7 @@
 }
 
 :root {
+  /* Fallback tokens only. Runtime colors are owned by html.arcory-mode-* below. */
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -114,38 +115,263 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.145 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  /* Selector hook for Tailwind/shadcn dark:* variants. Color values live in mode classes. */
+  color-scheme: dark;
+}
+
+html.arcory-mode-day {
+  color-scheme: light;
+  --background: oklch(0.9528 0.0086 84.57);
+  --foreground: oklch(0.215 0 0);
+  --card: oklch(0.9528 0.0086 84.57);
+  --card-foreground: oklch(0.215 0 0);
+  --popover: oklch(0.9528 0.0086 84.57);
+  --popover-foreground: oklch(0.215 0 0);
+  --primary: oklch(0.215 0 0);
+  --primary-foreground: oklch(0.9528 0.0086 84.57);
+  --secondary: oklch(0.944 0.006 84.2);
+  --secondary-foreground: oklch(0.215 0 0);
+  --muted: oklch(0.944 0.006 84.2);
+  --muted-foreground: oklch(0.627 0 0);
+  --accent: oklch(0.944 0.006 84.2);
+  --accent-foreground: oklch(0.215 0 0);
+  --border: oklch(0.884 0.005 84.4);
+  --input: oklch(0.884 0.005 84.4);
+  --ring: oklch(0.627 0 0);
+}
+
+html.arcory-mode-night {
+  color-scheme: dark;
+  --background: oklch(0.1344 0 0);
+  --foreground: oklch(0.767 0 0);
+  --card: oklch(0.1344 0 0);
+  --card-foreground: oklch(0.767 0 0);
+  --popover: oklch(0.1344 0 0);
+  --popover-foreground: oklch(0.767 0 0);
+  --primary: oklch(0.767 0 0);
+  --primary-foreground: oklch(0.1344 0 0);
+  --secondary: oklch(0.171 0 0);
+  --secondary-foreground: oklch(0.767 0 0);
+  --muted: oklch(0.171 0 0);
+  --muted-foreground: oklch(0.371 0 0);
+  --accent: oklch(0.171 0 0);
+  --accent-foreground: oklch(0.767 0 0);
+  --border: oklch(0.171 0 0);
+  --input: oklch(0.171 0 0);
+  --ring: oklch(0.371 0 0);
+}
+
+html.arcory-mode-summer {
+  color-scheme: light;
+  --background: oklch(0.9528 0.0086 84.57);
+  --foreground: oklch(0.2178 0 0);
+  --card: oklch(0.9528 0.0086 84.57);
+  --card-foreground: oklch(0.2178 0 0);
+  --popover: oklch(0.9528 0.0086 84.57);
+  --popover-foreground: oklch(0.2178 0 0);
+  --primary: oklch(0.2178 0 0);
+  --primary-foreground: oklch(0.9528 0.0086 84.57);
+  --secondary: oklch(0.9294 0.0091 78.28);
+  --secondary-foreground: oklch(0.2178 0 0);
+  --muted: oklch(0.9294 0.0091 78.28);
+  --muted-foreground: oklch(0.56 0 0);
+  --accent: oklch(0.9294 0.0091 78.28);
+  --accent-foreground: oklch(0.2178 0 0);
+  --border: oklch(0.82 0.0088 84.58);
+  --input: oklch(0.82 0.0088 84.58);
+  --ring: oklch(0.6268 0 0);
+}
+
+html.arcory-mode-midnight {
+  color-scheme: dark;
+  --background: oklch(0.1344 0 0);
+  --foreground: oklch(0.7699 0 0);
+  --card: oklch(0.1344 0 0);
+  --card-foreground: oklch(0.7699 0 0);
+  --popover: oklch(0.1344 0 0);
+  --popover-foreground: oklch(0.7699 0 0);
+  --primary: oklch(0.7699 0 0);
+  --primary-foreground: oklch(0.1344 0 0);
+  --secondary: oklch(0.1822 0 0);
+  --secondary-foreground: oklch(0.7699 0 0);
+  --muted: oklch(0.1822 0 0);
+  --muted-foreground: oklch(0.3715 0 0);
+  --accent: oklch(0.1957 0 0);
+  --accent-foreground: oklch(0.7699 0 0);
+  --border: oklch(0.209 0 0);
+  --input: oklch(0.209 0 0);
+  --ring: oklch(0.3715 0 0);
+}
+
+html.arcory-mode-rain {
+  color-scheme: light;
+  --background: oklch(0.9528 0.0086 84.57);
+  --foreground: oklch(0.2178 0 0);
+  --card: oklch(0.9528 0.0086 84.57);
+  --card-foreground: oklch(0.2178 0 0);
+  --popover: oklch(0.9528 0.0086 84.57);
+  --popover-foreground: oklch(0.2178 0 0);
+  --primary: oklch(0.2178 0 0);
+  --primary-foreground: oklch(0.9528 0.0086 84.57);
+  --secondary: oklch(0.9294 0.0091 78.28);
+  --secondary-foreground: oklch(0.2178 0 0);
+  --muted: oklch(0.9294 0.0091 78.28);
+  --muted-foreground: oklch(0.6268 0 0);
+  --accent: oklch(0.9294 0.0091 78.28);
+  --accent-foreground: oklch(0.2178 0 0);
+  --border: oklch(0.8737 0.0088 84.58);
+  --input: oklch(0.8737 0.0088 84.58);
+  --ring: oklch(0.6268 0 0);
+}
+
+html.arcory-mode-day,
+html.arcory-mode-summer {
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.9528 0.0086 84.57);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.9528 0.0086 84.57);
+  --sidebar-foreground: oklch(0.215 0 0);
+  --sidebar-primary: oklch(0.215 0 0);
+  --sidebar-primary-foreground: oklch(0.9528 0.0086 84.57);
+  --sidebar-accent: oklch(0.944 0.006 84.2);
+  --sidebar-accent-foreground: oklch(0.215 0 0);
+  --sidebar-border: oklch(0.884 0.005 84.4);
+  --sidebar-ring: oklch(0.627 0 0);
+}
+
+html.arcory-mode-rain {
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.9528 0.0086 84.57);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.9528 0.0086 84.57);
+  --sidebar-foreground: oklch(0.2178 0 0);
+  --sidebar-primary: oklch(0.2178 0 0);
+  --sidebar-primary-foreground: oklch(0.9528 0.0086 84.57);
+  --sidebar-accent: oklch(0.9294 0.0091 78.28);
+  --sidebar-accent-foreground: oklch(0.2178 0 0);
+  --sidebar-border: oklch(0.8737 0.0088 84.58);
+  --sidebar-ring: oklch(0.6268 0 0);
+}
+
+html.arcory-mode-night,
+html.arcory-mode-midnight {
   --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --destructive-foreground: oklch(0.767 0 0);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.1344 0 0);
+  --sidebar-foreground: oklch(0.767 0 0);
+  --sidebar-primary: oklch(0.767 0 0);
+  --sidebar-primary-foreground: oklch(0.1344 0 0);
+  --sidebar-accent: oklch(0.171 0 0);
+  --sidebar-accent-foreground: oklch(0.767 0 0);
+  --sidebar-border: oklch(0.171 0 0);
+  --sidebar-ring: oklch(0.371 0 0);
+}
+
+.arcory-chaos-root {
+  position: relative;
+  z-index: 1;
+}
+
+.arcory-chaos-panel {
+  position: relative;
+}
+
+.arcory-atmosphere {
+  pointer-events: none;
+}
+
+.arcory-summer-overlay,
+.arcory-rain-overlay,
+.arcory-midnight-overlay {
+  position: fixed;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 700ms cubic-bezier(0.23, 1, 0.32, 1);
+  pointer-events: none;
+}
+
+.arcory-summer-overlay,
+.arcory-rain-overlay,
+.arcory-midnight-overlay {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 999;
+}
+
+.arcory-summer-overlay,
+.arcory-rain-overlay {
+  mix-blend-mode: multiply;
+}
+
+.arcory-summer-overlay {
+  object-position: top;
+}
+
+.arcory-summer-overlay[data-ready="true"] {
+  opacity: 1;
+}
+
+.arcory-rain-overlay[data-ready="true"] {
+  opacity: 0.6;
+}
+
+.arcory-midnight-overlay[data-ready="true"] {
+  opacity: 0.6;
+}
+
+@media (max-width: 768px) {
+  .arcory-midnight-overlay {
+    object-position: left;
+  }
+}
+
+html.arcory-mode-summer .arcory-summer-overlay {
+  opacity: 1;
+}
+
+.arcory-chaos-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9001;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.arcory-chaos-piece {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  overflow: hidden;
+  cursor: grab;
+  pointer-events: auto;
+  transform-origin: center;
+  will-change: transform;
+}
+
+.arcory-chaos-piece.is-grabbing {
+  cursor: grabbing;
+}
+
+.arcory-chaos-word {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 @layer base {
@@ -174,7 +400,13 @@
       "Segoe UI Symbol",
       "Noto Color Emoji";
     @apply bg-background text-foreground font-sans antialiased;
+    transition:
+      background-color 400ms ease,
+      color 400ms ease;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
 }
 
 @layer utilities {

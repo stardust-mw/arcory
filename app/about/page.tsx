@@ -7,8 +7,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function AboutPage() {
   return (
-    <main className="min-h-[100dvh] bg-background">
-      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[768px] flex-col bg-card px-4 pt-8 pb-8 sm:px-16 sm:pt-9 sm:pb-16">
+    <main className="arcory-page-shell min-h-[100dvh] bg-background">
+      <div className="arcory-chaos-panel mx-auto flex min-h-[100dvh] w-full max-w-[768px] flex-col bg-card px-4 pt-8 pb-8 sm:px-16 sm:pt-9 sm:pb-16">
         <header className="flex items-center justify-between text-sm">
           <Link className="flex items-center gap-1.5 text-foreground transition-colors hover:text-foreground/80" href="/">
             <IdenticonAvatar
