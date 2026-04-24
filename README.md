@@ -1,11 +1,11 @@
 # arcory
 
-Arcory 是一个面向「网站收藏 / 资源 / 案例 / 文章」的展示型项目。当前版本基于 Next.js 16、shadcn/ui 与一套自定义模式系统实现，首页已经重构为接近 [dany.works](https://dany.works/) 的三栏结构，同时保留了可复用的底层组件和 Notion 数据接入能力。
+Arcory 是一个面向「网站收藏 / 资源 / 案例 / 文章」的展示型项目。当前版本基于 Next.js 16、shadcn/ui 与一套可迁移的模式系统实现，首页已经重构为接近 [dany.works](https://dany.works/) 的三栏结构，同时保留了可复用的底层组件和 Notion 数据接入能力。
 
 ## 项目目标
 
 - 用更克制的三栏布局承载网站列表与预览
-- 把 `D / S / N / M / R / C` 做成一套可切换的页面状态系统，而不只是深浅色切换
+- 把 `D / S / N / M / R / C` 做成一套页面状态系统，而不只是深浅色切换
 - 保留可复用的底层组件能力，例如头像生成、空状态、媒体组件、模式容器与 chaos 交互
 - 支持从 Notion 数据库同步站点数据、截图和分类结果
 
@@ -49,9 +49,11 @@ pnpm screenshots:promote
 | 路径 | 说明 |
 | --- | --- |
 | `app/page.tsx` | 首页三栏布局、站点列表、hover 预览 |
-| `app/layout.tsx` | 根布局、默认模式、全局字体注入 |
+| `app/layout.tsx` | 根布局、默认模式、首屏快捷键缓冲脚本、全局字体注入 |
 | `app/globals.css` | 全局 tokens、模式颜色、overlay 样式 |
-| `components/site-mode-provider.tsx` | 模式状态、快捷键、视频层、chaos 模式 |
+| `components/site-mode-provider.tsx` | 模式状态、快捷键、chaos 模式、模式上下文 |
+| `components/site-mode-atmosphere.tsx` | 视频氛围层组件，负责播放、ready 状态与重置 |
+| `lib/site-mode.ts` | 模式类型、快捷键映射、运行时类名、视频配置 |
 | `lib/notion-sync.ts` | Notion 拉取、缓存、备份、分类、去重 |
 | `app/api/sites/route.ts` | 前端站点数据接口 |
 | `app/api/notion/*` | 同步、截图代理、分类锁定相关接口 |
@@ -70,7 +72,8 @@ pnpm screenshots:promote
 | `AboutGalaxyGrid` | `components/about-galaxy-grid.tsx` | About 图集展示组件 |
 | `TextScramble` | `components/text-scramble.tsx` | 文本打散/扰动动效能力 |
 | `HeroAsciiGrid` | `components/hero-ascii-grid.tsx` | 早期首页 Hero 动效组件，当前仍保留可复用 |
-| `site-mode-provider` | `components/site-mode-provider.tsx` | 模式控制、键盘切换、overlay 与 chaos 逻辑 |
+| `SiteModeProvider` | `components/site-mode-provider.tsx` | 模式控制、键盘切换、chaos 逻辑与上下文 |
+| `SiteModeAtmosphere` | `components/site-mode-atmosphere.tsx` | 单个模式视频层的生命周期组件 |
 | shadcn UI 基础组件 | `components/ui/*` | 输入框、按钮、卡片、标签页等基础层 |
 
 ### 头像算法变体
@@ -98,81 +101,161 @@ pnpm screenshots:promote
 - 在 `@theme inline` 中映射给 `--font-sans` 和 `--font-mono`
 - 页面层优先通过 `font-sans` / `font-mono` 使用，而不是散落手写 `font-family`
 
-## 模式系统
+## 模式系统与视频氛围层
 
-模式系统由 `SiteModeProvider`、`html.arcory-mode-*` 运行时类名、全局 design tokens、视频 overlay 和 chaos 交互组成。
+这一套实现现在已经拆成了“配置层 + provider 层 + atmosphere 组件 + CSS token 层”四层，后续如果换项目，可以优先搬这四层，而不是回头从一个大文件里重新找逻辑。
 
-### 运行机制
+### 1. 架构分层
 
-- 服务端默认输出 `day`，避免首屏没有模式类
-- 客户端挂载后从 `localStorage("arcory-site-mode")` 读取上次选择
-- 若本地没有保存值，则按 `prefers-color-scheme: dark` 回退到 `night` 或 `day`
-- 每次切换时会统一更新：
-  - `<html>` 上的 `arcory-mode-day / night / summer / midnight / rain`
-  - `data-site-mode`
-  - `.dark` 选择器钩子
-- `.dark` 本身不存颜色，只用于命中 Tailwind / shadcn 的 `dark:*` 变体；真正的 token 都定义在 `html.arcory-mode-*`
+| 层级 | 文件 | 职责 |
+| --- | --- | --- |
+| 模式配置层 | `lib/site-mode.ts` | 定义 `SiteMode`、快捷键映射、`html` 类名、dark family 判断、视频配置 |
+| 运行时控制层 | `components/site-mode-provider.tsx` | 管理 mode state、首屏恢复、快捷键切换、chaos 模式、context 暴露 |
+| 视频层组件 | `components/site-mode-atmosphere.tsx` | 根据当前模式加载、播放、暂停并重置单个 atmosphere video |
+| 样式层 | `app/globals.css` | 通过 `html.arcory-mode-*` 接管 token，并定义 overlay 的混合模式、透明度、定位 |
 
-### 快捷键
+### 2. 模式切换链路
 
-- `D`：day
-- `S`：summer
-- `N`：night
-- `M`：midnight
-- `R`：rain
-- `C`：chaos
+完整链路如下：
 
-输入框、文本域、下拉框和 `contenteditable` 区域会自动跳过这些快捷键。
+1. 服务端先输出 `html.arcory-mode-day`，保证首屏 HTML 有默认模式类，不会出现“完全无 token”的白屏状态。
+2. `app/layout.tsx` 在 hydration 前注入一段很小的快捷键缓冲脚本。
+3. 如果用户在页面尚未 hydration 时按下 `d / s / n / m / r / c`，脚本会把按键和时间戳写入 `sessionStorage("arcory-pending-shortcut")`。
+4. `SiteModeProvider` 挂载后先读取 `localStorage("arcory-site-mode")`，没有历史值时再回退到 `prefers-color-scheme`。
+5. Provider 再消费那段 pending shortcut。如果是 `d / s / n / m / r`，直接覆盖初始模式；如果是 `c`，会在页面准备好后补触发一次 chaos。
+6. 每次模式切换都会统一调用 `applySiteMode()`，同步更新：
+   - `<html>` 上的 `arcory-mode-day / night / summer / midnight / rain`
+   - `data-site-mode`
+   - `.dark` 这个选择器钩子
+7. 之后全站的颜色、边框、hover、视频显示都由 CSS token 和 overlay 状态共同决定。
 
-### Token 组织方式
+### 3. 为什么要同时保留 `html.arcory-mode-*` 和 `.dark`
 
-`app/globals.css` 采用 shadcn / Tailwind v4 token 写法：
+两者职责不同：
 
-- `:root` 只保存 fallback token
-- `@theme inline` 把 `--background / --card / --muted / --border ...` 映射为 `--color-*`
-- 运行时颜色由 `html.arcory-mode-*` 接管
-- `D / S / R` 属于浅色家族，`N / M` 属于暗色家族
+- `html.arcory-mode-*` 才是真正持有颜色 token 的地方，例如 `--background`、`--card`、`--muted`、`--border`。
+- `.dark` 只是 shadcn / Tailwind `dark:*` 语法的命中钩子，本身不存主题颜色。
 
-### 各模式实现
+所以这套方案不是“只有 `:root` 和 `.dark`”的常规深浅色模式，而是：
 
-#### D / N
+- `:root` 只保底
+- `html.arcory-mode-*` 接管实际颜色
+- `.dark` 仅负责兼容已有的 `dark:*` 写法
 
-- `D`：暖白纸张感底色，整体对比克制
-- `N`：深灰黑底色，主要靠 `secondary / muted / border` 拉层级
+### 4. 视频氛围层的实现方式
 
-#### S
+视频层不是单纯的“背景视频”，而是一层固定定位的 atmosphere overlay：
 
-- 使用真实视频层：`public/leaves.mp4`
-- 关键样式：`position: fixed`、`object-fit: cover`、`mix-blend-mode: multiply`
-- 目标：保留页面结构可读性，同时把树叶和光影压进背景层次
+- `SiteModeProvider` 统一渲染所有 atmosphere 组件
+- 每个 atmosphere 组件都对应一个模式配置，例如：
+  - `summer -> /leaves.mp4`
+  - `midnight -> /moon.mp4`
+  - `rain -> /rain.mp4`
+- `SiteModeAtmosphere` 只负责单个视频的生命周期：
+  - 当前模式命中时：检查 `readyState`，必要时触发 `load()`，在 `loadeddata` 后 `play()`
+  - 模式切走时：`pause()`、`currentTime = 0`、清掉 `ready` 状态
+- CSS 决定视频最终怎么“融进页面”：位置、透明度、`mix-blend-mode`、`object-fit`、`object-position`
 
-#### R
+这也是最适合抽成组件的一层，因为它与页面内容结构几乎解耦，只依赖：
 
-- 使用真实视频层：`public/rain.mp4`
-- 关键样式：`mix-blend-mode: multiply`、`opacity`、`object-fit: cover`
-- 目标：雨感主要来自视频本身，不靠大幅替换底色
+- 当前 mode
+- 视频源
+- overlay class
 
-#### M
+### 5. 为什么 S / R 用 `multiply`，M 不用
 
-- 使用真实视频层：`public/moon.mp4`
-- 不走 `multiply`，而是依赖暗底与视频透明度建立月夜感
-- 移动端会单独调整 `object-position`
+`S` 和 `R` 都属于浅底模式，页面底色和文字结构本身比较轻，所以视频需要压进背景里，而不是盖在内容上。
 
-#### C
+因此这两个模式采用：
 
-- `C` 是 chaos 模式，不是普通主题切换
-- 页面会被按“块级元素 + 词级文本”采样并复制到 `arcory-chaos-overlay`
-- 复制层交给 `matter-js` 建立刚体、重力、摩擦和拖拽
-- 再次触发时会执行回收与归位动画
+- `position: fixed`
+- `mix-blend-mode: multiply`
+- 通过 `opacity` 控制强度
 
-### 为什么视频不会直接盖掉内容
+`multiply` 的好处是：
 
-关键不是单纯的 `z-index`，而是“视频层 + 混合模式 + 页面底色”一起工作：
+- 深色线条、边框、文字结构还能保住
+- 视频亮部会自然融进浅底，而不是形成一层发灰的蒙版
+- 搜索框边线、列表分割线不会被视频“糊掉”
 
-- 视频层确实位于内容上方
-- `S / R` 使用 `mix-blend-mode: multiply`
-- multiply 会保留深色线条结构，同时让亮部更自然地融入背景
-- 因此列表线条、搜索框边界和文字仍然可见，不会像普通半透明遮罩那样整块发灰
+`M` 是暗底模式，如果再给暗视频叠 `multiply`，页面会更闷、更糊，文字对比也更容易掉下去。所以 `M` 采用的是：
+
+- 暗底 token
+- 不使用 `multiply`
+- 主要依赖视频透明度和位置控制气氛
+
+当前实现里，`midnight` overlay 透明度是 `0.4`。
+
+### 6. 各模式当前分工
+
+- `D`：默认白天基准模式，负责作为浅色设计母版
+- `N`：默认夜间基准模式，负责作为暗色设计母版
+- `S`：沿用 `D` 的底色家族，再叠加 `leaves.mp4` 和 `multiply`
+- `R`：沿用 `D` 的底色基准，再叠加 `rain.mp4` 和 `multiply`
+- `M`：沿用暗色家族，用 `moon.mp4` 叠加月夜氛围，不走 `multiply`
+- `C`：不是 token 主题，而是对当前页面做一次瞬时物理打散
+
+### 7. Chaos 模式的实现边界
+
+`C` 模式现在仍放在 `SiteModeProvider` 中，没有继续抽离，是有意的：
+
+- 它强依赖当前 DOM 结构采样
+- 要读取三栏分割线、列表行、logo、预览区、空态等实际节点
+- 还要在结束时恢复这些节点的可见性、边框和 HTML 内容
+
+当前做法是：
+
+- 桌面端优先按三栏结构采样
+- 词级文本会拆成单词 span，再复制到 overlay
+- 分割线会被单独抽成 `separator` 刚体
+- 再交给 `matter-js` 做重力、碰撞和拖拽
+- 退出 chaos 时，把每个元素缓动归位并恢复 DOM
+
+所以它更像“页面交互引擎”，而不是一个纯主题组件。后续如果换项目，建议先复用 `D / S / N / M / R`，再按页面结构重新适配 `C`。
+
+### 8. 现在已经适合抽成组件 / 配置的部分
+
+已经拆出的可迁移单元：
+
+- `lib/site-mode.ts`
+  - 适合直接带走
+  - 包含模式类型、快捷键、运行时类名、dark family 判断、视频配置
+- `components/site-mode-atmosphere.tsx`
+  - 适合直接带走
+  - 只要项目里也采用“固定 overlay 视频”的方案，就能复用
+- `components/site-mode-provider.tsx`
+  - 适合“半复用”
+  - 模式 state、快捷键、pending shortcut 恢复逻辑可以直接用
+  - chaos 采样部分通常要按新页面结构调整
+
+### 9. 迁移到新项目的最小步骤
+
+如果以后把这套方案搬到别的项目，建议按下面顺序：
+
+1. 复制 `lib/site-mode.ts`。
+2. 复制 `components/site-mode-atmosphere.tsx`。
+3. 复制 `components/site-mode-provider.tsx`，先只保留 mode state、快捷键和 atmosphere 部分；如果新页面结构完全不同，先暂时注释 chaos 采样逻辑也可以。
+4. 在新项目的 `layout` 里加入 hydration 前的 pending shortcut 脚本。
+5. 在全局 CSS 中建立：
+   - `:root` fallback token
+   - `html.arcory-mode-*` token
+   - `.dark` selector hook
+   - overlay class，例如 `.arcory-summer-overlay`
+6. 把视频素材放到 `public/`，并保证 `src` 与配置一致。
+7. 用 provider 包住页面内容。
+8. 最后再按新项目的布局微调：
+   - `object-position`
+   - `opacity`
+   - `mix-blend-mode`
+   - 哪些元素应处于视频之上或之下
+
+### 10. 迁移时最容易踩的坑
+
+- 只复制 `.dark`，不复制 `html.arcory-mode-*`，会导致 mode 切了但 token 没变。
+- 把视频直接塞进页面流里，而不是 fixed overlay，会让布局和滚动一起乱掉。
+- 忘记在模式切走时 `pause()` + `currentTime = 0`，会导致回切时出现跳帧或沿用旧帧。
+- 在暗底模式里盲目使用 `multiply`，容易把文字对比打没。
+- 新项目如果没有和当前页面相同的 DOM 标记类，chaos 逻辑不能直接照搬。
 
 ## Notion 数据接入
 
