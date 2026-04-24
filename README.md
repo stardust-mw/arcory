@@ -1,6 +1,13 @@
 # arcory
 
-arcory 是一个面向「网站收藏 / 文章 / 插件 / 案例」的展示型项目，当前基于 Next.js + shadcn/ui 实现。
+Arcory 是一个面向「网站收藏 / 资源 / 案例 / 文章」的展示型项目。当前版本基于 Next.js 16、shadcn/ui 与一套可迁移的模式系统实现，首页已经重构为接近 [dany.works](https://dany.works/) 的三栏结构，同时保留了可复用的底层组件和 Notion 数据接入能力。
+
+## 项目目标
+
+- 用更克制的三栏布局承载网站列表与预览
+- 把 `D / S / N / M / R / C` 做成一套页面状态系统，而不只是深浅色切换
+- 保留可复用的底层组件能力，例如头像生成、空状态、媒体组件、模式容器与 chaos 交互
+- 支持从 Notion 数据库同步站点数据、截图和分类结果
 
 ## 技术栈
 
@@ -10,62 +17,10 @@ arcory 是一个面向「网站收藏 / 文章 / 插件 / 案例」的展示型�
 - Tailwind CSS v4
 - shadcn/ui
 - Radix UI
-- tw-animate-css
+- matter-js
+- sharp
 
-## 主要组件
-
-| 组件 | 文件 | 说明 |
-| --- | --- | --- |
-| HeroAsciiGrid | `components/hero-ascii-grid.tsx` | 首页 Hero ASCII 动态背景（20x11 网格 + 波动动画） |
-| IdenticonAvatar | `components/identicon-avatar.tsx` | 默认头像组件，支持 Bayer 2x2 / 4x4 等变体 |
-| ListEmptyState | `components/list-empty-state.tsx` | 列表空状态组件，可按分类动态复用（如 `SYSTEM`） |
-| AboutCosmosAnimation | `components/about-cosmos-animation.tsx` | About 页面顶部黑洞视频区域（视频方案） |
-| AboutGalaxyGrid | `components/about-galaxy-grid.tsx` | About 页面银河图集（裁切网格 + 灰度到彩色 hover） |
-| Input（shadcn） | `components/ui/input.tsx` | 搜索输入框基础组件 |
-
-## 头像算法能力
-
-实现文件：`lib/identicon.ts`
-
-支持的变体：
-
-- `bayer-2x2`
-- `bayer-4x4`
-- `bayer-4x4-prod-hsl-triadic`
-- `bayer-4x4-mono-oklch`
-
-默认头像在列表中通过 `IdenticonAvatar` 调用并渲染为圆形 20px。
-
-## 组件参考链接
-
-- shadcn/ui: [https://ui.shadcn.com/](https://ui.shadcn.com/)
-- identicon 原型参考: [https://identicon-prototype.labs.vercel.dev/](https://identicon-prototype.labs.vercel.dev/)
-- Hero 动效参考: [https://hackathon.polar.sh/](https://hackathon.polar.sh/)
-
-## About 页面（当前实现）
-
-- 路由：`/about`（文件：`app/about/page.tsx`）
-- 顶部区域：黑洞视频（`AboutCosmosAnimation`）
-- 中部文案：`Logbook + Manifesto` 结构（命令式短句 + 收束文案）
-- 下方展示：`GALAXY`（`AboutGalaxyGrid`）
-
-### About 媒体资源策略
-
-- 黑洞视频：
-  - 源文件（已删除，不再使用）：`public/black-hole.mp4`
-  - 当前使用：`public/black-hole.web.mp4`（压缩版）
-  - 封面图：`public/black-hole-poster.jpg`
-- 组件播放策略（`components/about-cosmos-animation.tsx`）：
-  - `preload="none"`，减少初始加载
-  - `poster` 优先显示静态封面
-  - `<source>` 顺序：先压缩版，再原版兜底
-- 银河图集素材：
-  - 目录：`public/galaxy/`
-  - 格式：压缩 `webp`（示例：`galaxy-01.webp ... galaxy-09.webp`）
-  - 展示：矩形 grid 裁切，默认黑白，单图 hover 恢复彩色
-  - 加载：进入视口后批量加载，含骨架占位与优先级控制
-
-## 本地运行
+## 本地开发
 
 ```bash
 pnpm install
@@ -74,279 +29,315 @@ pnpm dev
 
 默认访问地址：`http://localhost:3000`
 
-## 模式切换系统
+常用命令：
 
-当前模式系统由 `SiteModeProvider` + `html.arcory-mode-*` 运行时类名 + 全局 design tokens + 视频覆盖层共同组成。
-目标不是只切换“深浅色”，而是把 `D / S / N / M / R / C` 做成一套可切换的页面状态机。
+```bash
+pnpm build
+pnpm lint
+pnpm screenshots:promote
+```
 
-### 运行机制
+## 当前主页面
 
-- 默认 SSR 输出为 `day`：`app/layout.tsx` 在 `<html>` 上写入 `class="arcory-mode-day"` 和 `data-site-mode="day"`，避免首屏没有模式类。
-- 客户端挂载后，`components/site-mode-provider.tsx` 会读取 `localStorage("arcory-site-mode")`。
-- 如果本地没有保存值，则按 `prefers-color-scheme: dark` 在首屏后回退到 `night` 或 `day`。
-- 每次切换模式时，`applyMode()` 会统一更新：
-  - `<html>` 上的 `arcory-mode-day / night / summer / midnight / rain`
-  - `data-site-mode`
-  - `.dark` 这个选择器钩子
-- `.dark` 本身不承载颜色，只是给 Tailwind / shadcn 的 `dark:*` 变体一个命中入口；真正的 token 值都写在 `html.arcory-mode-*` 上。
+- 路由：`/`
+- 结构：左侧品牌区 / 中间站点列表 / 右侧 hover 预览
+- 文件：`app/page.tsx`
+- 特征：窄中栏列表、固定预览区、模式切换、搜索、分类筛选
 
-### 快捷键
+## 目录与职责
 
-全局键盘监听在 `SiteModeProvider` 内实现，并且会跳过 `input / textarea / select / contenteditable`：
+| 路径 | 说明 |
+| --- | --- |
+| `app/page.tsx` | 首页三栏布局、站点列表、hover 预览 |
+| `app/layout.tsx` | 根布局、默认模式、首屏快捷键缓冲脚本、全局字体注入 |
+| `app/globals.css` | 全局 tokens、模式颜色、overlay 样式 |
+| `components/site-mode-provider.tsx` | 模式状态、快捷键、chaos 模式、模式上下文 |
+| `components/site-mode-atmosphere.tsx` | 视频氛围层组件，负责播放、ready 状态与重置 |
+| `lib/site-mode.ts` | 模式类型、快捷键映射、运行时类名、视频配置 |
+| `lib/notion-sync.ts` | Notion 拉取、缓存、备份、分类、去重 |
+| `app/api/sites/route.ts` | 前端站点数据接口 |
+| `app/api/notion/*` | 同步、截图代理、分类锁定相关接口 |
+| `public/*.mp4` | 模式视频素材 |
 
-- `D`：day
-- `S`：summer
-- `N`：night
-- `M`：midnight
-- `R`：rain
-- `C`：chaos
+## 核心可复用组件
 
-### Token 组织方式
+这些底层组件仍然保留，README 也以“能力说明”方式保留，而不是只写页面结果。About 相关组件目前保留在仓库中，作为可复用媒体与展示模块，而不是当前首页信息架构的一部分。
 
-`app/globals.css` 采用 shadcn / Tailwind v4 的 token 语法：
+| 组件 / 能力 | 文件 | 说明 |
+| --- | --- | --- |
+| `IdenticonAvatar` | `components/identicon-avatar.tsx` | 默认头像组件，支持多种 Bayer 变体 |
+| `lib/identicon.ts` | `lib/identicon.ts` | 头像生成算法与变体定义 |
+| `ListEmptyState` | `components/list-empty-state.tsx` | 分类空态与搜索空态复用 |
+| `AboutCosmosAnimation` | `components/about-cosmos-animation.tsx` | About 顶部视频媒体组件 |
+| `AboutGalaxyGrid` | `components/about-galaxy-grid.tsx` | About 图集展示组件 |
+| `TextScramble` | `components/text-scramble.tsx` | 文本打散/扰动动效能力 |
+| `HeroAsciiGrid` | `components/hero-ascii-grid.tsx` | 早期首页 Hero 动效组件，当前仍保留可复用 |
+| `SiteModeProvider` | `components/site-mode-provider.tsx` | 模式控制、键盘切换、chaos 逻辑与上下文 |
+| `SiteModeAtmosphere` | `components/site-mode-atmosphere.tsx` | 单个模式视频层的生命周期组件 |
+| shadcn UI 基础组件 | `components/ui/*` | 输入框、按钮、卡片、标签页等基础层 |
 
-- `:root` 只放 fallback token。
-- `@theme inline` 把 `--background / --card / --muted / --border ...` 映射为 `--color-*`，让 `bg-background`、`text-foreground`、`border-border` 这类 class 继续成立。
-- 运行时颜色由 `html.arcory-mode-*` 接管。
-- `D / S / R` 属于浅色家族，`N / M` 属于暗色家族。
-- `S` 和 `R` 的底色故意保持接近 `D`，视觉变化主要交给视频覆盖层，而不是直接换一整块新背景色；这是为了接近 [dany.works](https://dany.works/) 的切换观感。
+### 头像算法变体
 
-### 各模式视觉实现
+实现文件：`lib/identicon.ts`
 
-#### D / N
+当前支持：
 
-- `D`（day）：浅色纸张感底色，边框和 muted 对比被压低，页面更像一张暖白底的编辑稿。
-- `N`（night）：纯黑偏灰底色，层级主要靠 `secondary / muted / border` 拉开，不依赖重阴影。
+- `bayer-2x2`
+- `bayer-4x4`
+- `bayer-4x4-prod-hsl-triadic`
+- `bayer-4x4-mono-oklch`
 
-#### S（summer）
+## 字体方案
 
-- 使用真实全屏视频层：`/public/leaves.mp4`。
-- Provider 在页面根节点之外直接渲染 `<video class="arcory-summer-overlay">`。
-- CSS 关键点：
-  - `position: fixed; inset: 0;`
-  - `object-fit: cover;`
-  - `object-position: top;`
-  - `mix-blend-mode: multiply;`
-- 页面主体内容之所以仍然清晰可见，是因为视频不是盖一层不透明贴图，而是通过 `multiply` 与底色相乘，只把叶子和光影压进背景层次里，不直接抹掉线条和文字。
+当前已从 Geist Mono 切换到本地字体 `Fragment Mono`：
 
-#### R（rain）
+- 字体文件：`app/fonts/FragmentMono-Regular.ttf`
+- 注入位置：`app/layout.tsx`
+- token 映射：`app/globals.css`
 
-- 使用真实全屏视频层：`/public/rain.mp4`。
-- 技术路径与 `S` 基本一致，也是固定定位的视频覆盖层。
-- CSS 关键点：
-  - `mix-blend-mode: multiply;`
-  - `opacity: 0.6;`
-  - `object-fit: cover;`
-- `R` 的底色同样保持在 `D` 家族附近，雨感主要来自视频本身的明暗和 multiply 叠加，而不是把整页改成蓝灰雨天背景。
+技术路径：
 
-#### M（midnight）
+- 使用 `next/font/local` 注入 `--font-fragment-mono`
+- 在 `@theme inline` 中映射给 `--font-sans` 和 `--font-mono`
+- 页面层优先通过 `font-sans` / `font-mono` 使用，而不是散落手写 `font-family`
 
-- 使用真实全屏视频层：`/public/moon.mp4`。
-- 与 `S / R` 不同，`M` 不使用 `mix-blend-mode`，而是直接依赖暗底 + 视频透明度去建立月夜投影感。
-- CSS 关键点：
-  - `opacity: 0.6;`
-  - `object-fit: cover;`
-  - 移动端 `object-position: left;`
-- `M` 属于独立暗色模式，不和 `D` 共用背景基调。
+## 模式系统与视频氛围层
 
-#### C（chaos）
+这一套实现现在已经拆成了“配置层 + provider 层 + atmosphere 组件 + CSS token 层”四层，后续如果换项目，可以优先搬这四层，而不是回头从一个大文件里重新找逻辑。
 
-- `C` 不是换主题，而是一个物理化交互模式。
-- Provider 会对当前可见页面做一次“采样拆解”：
-  - block 元素：`button / input / img / video / svg / canvas / [role="button"] / .arcory-chaos-block`
-  - text 元素：按 `Range` 把文本拆到“词”级别
-- 然后把这些 DOM 快照挂到单独的 `arcory-chaos-overlay` 上，并交给 `matter-js` 建立刚体、重力、摩擦和拖拽。
-- 原页面根节点会暂时 `visibility: hidden`，用户看到的是一层可拖拽、可坠落、可回收的碎片化副本。
-- 再次按 `C` 时，会执行一次反向插值动画，把所有碎片平滑归位。
+### 1. 架构分层
 
-### 为什么内容不会被视频盖掉
+| 层级 | 文件 | 职责 |
+| --- | --- | --- |
+| 模式配置层 | `lib/site-mode.ts` | 定义 `SiteMode`、快捷键映射、`html` 类名、dark family 判断、视频配置 |
+| 运行时控制层 | `components/site-mode-provider.tsx` | 管理 mode state、首屏恢复、快捷键切换、chaos 模式、context 暴露 |
+| 视频层组件 | `components/site-mode-atmosphere.tsx` | 根据当前模式加载、播放、暂停并重置单个 atmosphere video |
+| 样式层 | `app/globals.css` | 通过 `html.arcory-mode-*` 接管 token，并定义 overlay 的混合模式、透明度、定位 |
 
-这里的关键不是简单的 `z-index`，而是“视频层 + 混合模式 + 页面底色”一起工作：
+### 2. 模式切换链路
 
-- 视频层确实在内容上方。
-- 但 `S / R` 使用了 `mix-blend-mode: multiply`。
-- multiply 会保留深色线条结构，同时让亮部尽量融入背景，因此搜索框线条、文字边界、列表结构不会像普通半透明遮罩那样被整块糊住。
-- `M` 因为走的是暗色视频方案，所以不使用 multiply，而是直接靠透明度和构图控制可读性。
+完整链路如下：
 
-### 文件位置
+1. 服务端先输出 `html.arcory-mode-day`，保证首屏 HTML 有默认模式类，不会出现“完全无 token”的白屏状态。
+2. `app/layout.tsx` 在 hydration 前注入一段很小的快捷键缓冲脚本。
+3. 如果用户在页面尚未 hydration 时按下 `d / s / n / m / r / c`，脚本会把按键和时间戳写入 `sessionStorage("arcory-pending-shortcut")`。
+4. `SiteModeProvider` 挂载后先读取 `localStorage("arcory-site-mode")`，没有历史值时再回退到 `prefers-color-scheme`。
+5. Provider 再消费那段 pending shortcut。如果是 `d / s / n / m / r`，直接覆盖初始模式；如果是 `c`，会在页面准备好后补触发一次 chaos。
+6. 每次模式切换都会统一调用 `applySiteMode()`，同步更新：
+   - `<html>` 上的 `arcory-mode-day / night / summer / midnight / rain`
+   - `data-site-mode`
+   - `.dark` 这个选择器钩子
+7. 之后全站的颜色、边框、hover、视频显示都由 CSS token 和 overlay 状态共同决定。
 
-- 模式状态与快捷键：`components/site-mode-provider.tsx`
-- 模式 tokens 与 overlay 样式：`app/globals.css`
-- 默认 HTML 模式落点：`app/layout.tsx`
-- 页面主体容器：`app/page.tsx`
+### 3. 为什么要同时保留 `html.arcory-mode-*` 和 `.dark`
+
+两者职责不同：
+
+- `html.arcory-mode-*` 才是真正持有颜色 token 的地方，例如 `--background`、`--card`、`--muted`、`--border`。
+- `.dark` 只是 shadcn / Tailwind `dark:*` 语法的命中钩子，本身不存主题颜色。
+
+所以这套方案不是“只有 `:root` 和 `.dark`”的常规深浅色模式，而是：
+
+- `:root` 只保底
+- `html.arcory-mode-*` 接管实际颜色
+- `.dark` 仅负责兼容已有的 `dark:*` 写法
+
+### 4. 视频氛围层的实现方式
+
+视频层不是单纯的“背景视频”，而是一层固定定位的 atmosphere overlay：
+
+- `SiteModeProvider` 统一渲染所有 atmosphere 组件
+- 每个 atmosphere 组件都对应一个模式配置，例如：
+  - `summer -> /leaves.mp4`
+  - `midnight -> /moon.mp4`
+  - `rain -> /rain.mp4`
+- `SiteModeAtmosphere` 只负责单个视频的生命周期：
+  - 当前模式命中时：检查 `readyState`，必要时触发 `load()`，在 `loadeddata` 后 `play()`
+  - 模式切走时：`pause()`、`currentTime = 0`、清掉 `ready` 状态
+- CSS 决定视频最终怎么“融进页面”：位置、透明度、`mix-blend-mode`、`object-fit`、`object-position`
+
+这也是最适合抽成组件的一层，因为它与页面内容结构几乎解耦，只依赖：
+
+- 当前 mode
+- 视频源
+- overlay class
+
+### 5. 为什么 S / R 用 `multiply`，M 不用
+
+`S` 和 `R` 都属于浅底模式，页面底色和文字结构本身比较轻，所以视频需要压进背景里，而不是盖在内容上。
+
+因此这两个模式采用：
+
+- `position: fixed`
+- `mix-blend-mode: multiply`
+- 通过 `opacity` 控制强度
+
+`multiply` 的好处是：
+
+- 深色线条、边框、文字结构还能保住
+- 视频亮部会自然融进浅底，而不是形成一层发灰的蒙版
+- 搜索框边线、列表分割线不会被视频“糊掉”
+
+`M` 是暗底模式，如果再给暗视频叠 `multiply`，页面会更闷、更糊，文字对比也更容易掉下去。所以 `M` 采用的是：
+
+- 暗底 token
+- 不使用 `multiply`
+- 主要依赖视频透明度和位置控制气氛
+
+当前实现里，`midnight` overlay 透明度是 `0.4`。
+
+### 6. 各模式当前分工
+
+- `D`：默认白天基准模式，负责作为浅色设计母版
+- `N`：默认夜间基准模式，负责作为暗色设计母版
+- `S`：沿用 `D` 的底色家族，再叠加 `leaves.mp4` 和 `multiply`
+- `R`：沿用 `D` 的底色基准，再叠加 `rain.mp4` 和 `multiply`
+- `M`：沿用暗色家族，用 `moon.mp4` 叠加月夜氛围，不走 `multiply`
+- `C`：不是 token 主题，而是对当前页面做一次瞬时物理打散
+
+### 7. Chaos 模式的实现边界
+
+`C` 模式现在仍放在 `SiteModeProvider` 中，没有继续抽离，是有意的：
+
+- 它强依赖当前 DOM 结构采样
+- 要读取三栏分割线、列表行、logo、预览区、空态等实际节点
+- 还要在结束时恢复这些节点的可见性、边框和 HTML 内容
+
+当前做法是：
+
+- 桌面端优先按三栏结构采样
+- 词级文本会拆成单词 span，再复制到 overlay
+- 分割线会被单独抽成 `separator` 刚体
+- 再交给 `matter-js` 做重力、碰撞和拖拽
+- 退出 chaos 时，把每个元素缓动归位并恢复 DOM
+
+所以它更像“页面交互引擎”，而不是一个纯主题组件。后续如果换项目，建议先复用 `D / S / N / M / R`，再按页面结构重新适配 `C`。
+
+### 8. 现在已经适合抽成组件 / 配置的部分
+
+已经拆出的可迁移单元：
+
+- `lib/site-mode.ts`
+  - 适合直接带走
+  - 包含模式类型、快捷键、运行时类名、dark family 判断、视频配置
+- `components/site-mode-atmosphere.tsx`
+  - 适合直接带走
+  - 只要项目里也采用“固定 overlay 视频”的方案，就能复用
+- `components/site-mode-provider.tsx`
+  - 适合“半复用”
+  - 模式 state、快捷键、pending shortcut 恢复逻辑可以直接用
+  - chaos 采样部分通常要按新页面结构调整
+
+### 9. 迁移到新项目的最小步骤
+
+如果以后把这套方案搬到别的项目，建议按下面顺序：
+
+1. 复制 `lib/site-mode.ts`。
+2. 复制 `components/site-mode-atmosphere.tsx`。
+3. 复制 `components/site-mode-provider.tsx`，先只保留 mode state、快捷键和 atmosphere 部分；如果新页面结构完全不同，先暂时注释 chaos 采样逻辑也可以。
+4. 在新项目的 `layout` 里加入 hydration 前的 pending shortcut 脚本。
+5. 在全局 CSS 中建立：
+   - `:root` fallback token
+   - `html.arcory-mode-*` token
+   - `.dark` selector hook
+   - overlay class，例如 `.arcory-summer-overlay`
+6. 把视频素材放到 `public/`，并保证 `src` 与配置一致。
+7. 用 provider 包住页面内容。
+8. 最后再按新项目的布局微调：
+   - `object-position`
+   - `opacity`
+   - `mix-blend-mode`
+   - 哪些元素应处于视频之上或之下
+
+### 10. 迁移时最容易踩的坑
+
+- 只复制 `.dark`，不复制 `html.arcory-mode-*`，会导致 mode 切了但 token 没变。
+- 把视频直接塞进页面流里，而不是 fixed overlay，会让布局和滚动一起乱掉。
+- 忘记在模式切走时 `pause()` + `currentTime = 0`，会导致回切时出现跳帧或沿用旧帧。
+- 在暗底模式里盲目使用 `multiply`，容易把文字对比打没。
+- 新项目如果没有和当前页面相同的 DOM 标记类，chaos 逻辑不能直接照搬。
 
 ## Notion 数据接入
 
-项目已内置 Notion 同步能力，支持“新增 / 修改 / 删除（归档）”同步到本地缓存，并自动分类。
-当 Notion 中 `title` 为空时，会尝试基于网站上下文自动补全标题（优先网页 `<title>/og:title`，其次域名推断）。
-同步成功后会按小时写入备份快照；当 Notion 请求失败时，优先回退到「约 3 小时前」的快照数据展示。
+项目内置了 Notion 同步能力，支持站点信息、截图、分类结果和缓存回退。
 
-### 1) 环境变量
+### 环境变量
 
-在项目根目录创建 `.env.local`：
+在根目录创建 `.env.local`：
 
 ```bash
 NOTION_TOKEN=secret_xxx
 NOTION_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# 可选：自动分类（启用 AI 分类器）
+# 可选：自动分类
 OPENAI_API_KEY=sk-xxx
 OPENAI_CLASSIFIER_MODEL=gpt-4.1-mini
 
 # 可选：保护手动同步接口
 NOTION_SYNC_SECRET=your-secret
 
-# 可选：截图代理磁盘缓存（毫秒）
-# 默认 30 分钟缓存、1 分钟后台校验 Notion 是否有新图
+# 可选：截图代理缓存
 NOTION_SCREENSHOT_PROXY_CACHE_MS=1800000
 NOTION_SCREENSHOT_PROXY_VALIDATE_MS=60000
-# 可选：截图压缩参数（默认更偏向小体积）
 NOTION_SCREENSHOT_PROXY_MAX_WIDTH=640
 NOTION_SCREENSHOT_PROXY_WEBP_QUALITY=48
 NOTION_SCREENSHOT_PROXY_WEBP_EFFORT=6
-# 可选：运行时数据目录（Vercel 建议 /tmp/arcory-data）
+
+# 可选：运行时数据目录
 ARCORY_DATA_DIR=/tmp/arcory-data
 ```
 
-### 2) API 能力
+### API
 
-- `GET /api/sites`：返回前端使用的数据
-  - 若 Notion / 备份可用，返回对应数据
-  - 不再回退本地占位数据；不可用时返回空数组（前端展示 loading/空态）
-- `GET /api/notion/sync`：查看同步状态
-- `POST /api/notion/sync`：触发同步（支持 `?force=1` 或 body `{ "force": true }`）
-- `POST /api/notion/sync?force=1&reclassify=1`：强制同步并全量重分类（当你调整了分类规则、子分类推断策略时使用）
-- `GET /api/notion/screenshot?pageId=<notion_page_id>`：读取 Notion 截图并返回压缩后的缓存图（用于右下角 hover 预览）
-- `GET /api/notion/classification`：查看分类锁定状态
-- `POST /api/notion/classification?action=lock`：确认当前分类结果并“固定”
-- `POST /api/notion/classification?action=unlock`：解除固定，恢复自动分类/子分类
+| 接口 | 说明 |
+| --- | --- |
+| `GET /api/sites` | 返回前端站点数据 |
+| `GET /api/notion/sync` | 查看同步状态 |
+| `POST /api/notion/sync` | 触发同步 |
+| `POST /api/notion/sync?force=1&reclassify=1` | 强制同步并全量重分类 |
+| `GET /api/notion/screenshot?pageId=<id>` | 读取并压缩 Notion 截图 |
+| `GET /api/notion/classification` | 查看分类锁定摘要 |
+| `POST /api/notion/classification?action=lock` | 锁定分类结果 |
+| `POST /api/notion/classification?action=unlock` | 解锁分类结果 |
 
-当设置了 `NOTION_SYNC_SECRET` 后，同步接口需鉴权：
+配置了 `NOTION_SYNC_SECRET` 后，可通过以下任一方式鉴权：
 
-- Header `x-sync-secret: <secret>`，或
-- Header `Authorization: Bearer <secret>`
+- `x-sync-secret: <secret>`
+- `Authorization: Bearer <secret>`
 
-### 3) 同步缓存
+### 数据处理规则
 
-- 缓存文件：`data/notion-sites-cache.json`
-- 备份快照：`data/notion-sites-backup.json`（按小时保留，默认保留 14 天）
-- 已在 `.gitignore` 中忽略，不会提交到仓库
+#### 标题与去重
 
-### 4) 生成规则（标题 / 去重 / 分类）
+- 优先使用 Notion 自身的 `title`
+- 标题缺失时，可回退网页标题或域名推断
+- 同步阶段按规范化 URL 去重
+- 冲突时优先保留编辑时间更晚、信息更完整的记录
 
-#### 标题生成规则
+#### 分类与子分类
 
-- 优先使用 Notion 自身 `title` 字段（若为空则继续降级）。
-- 若设置 `NOTION_TITLE_FETCH=true`：尝试抓取网页 `og:title` / `twitter:title` / `<title>`。
-- 仍为空时，按 URL 域名推断标题（如 `ui.shadcn.com` -> `Ui · Shadcn`）。
-- 对弱标题做增强（例如 `Ui` / `App` / `Chat` 这类过短或通用标题）：
-  - 会追加域名语义，减少视觉上“重复标题”的问题。
+- 分类优先级：手动分类 > AI 分类 > 规则关键词分类
+- 子分类优先级：手动子分类 > 规则识别 > 数据集分析模型 > tags 回退 > `GENERAL`
+- 锁定后，手动修正值会覆盖自动结果并写回锁定结果
 
-#### 去重规则（按 URL）
+#### 截图缓存
 
-- 同步阶段按 URL 进行去重（规范化 host/path/search 后比较）。
-- 同 URL 冲突时保留“更优”记录，优先级：
-  - `lastEditedTime` 更新更晚
-  - 信息质量更高（标题完整、手动分类/子分类、tags、notes、clicks 等）
-  - 若仍相同则按 page id 稳定选择
+- 静态优先：`public/screenshot-cache/*.webp`
+- 运行时缓存：`data/screenshot-cache/`
+- 同步缓存：`data/notion-sites-cache.json`
+- 备份快照：`data/notion-sites-backup.json`
 
-#### 分类与子分类规则
+### 推荐流程
 
-- 分类优先级：手动分类 > AI 分类（配置 `OPENAI_API_KEY`）> 规则关键词分类。
-- 子分类优先级：手动子分类 > 规则语义识别（如 `AI`/`ICON`/`FONT`）> 数据集分析模型（按分类聚合站点 token）> tags 回退 > `GENERAL`。
-- 子分类模型为“真实数据驱动”：
-  - 从 `domain/path/tags/title/notes` 提取 token 并加权。
-  - 仅保留满足阈值的 token（默认至少出现在 2 条站点记录且总权重 >= 8）。
-  - 过滤单字符、纯数字和过泛词（如 `WORK`、`GENERAL`、`RESOURCES` 等噪音 token）。
-  - 每条站点在候选 token 中按分数选择最优子分类，低于阈值则回退到 `tags` 或 `GENERAL`。
-- `meta` 生成：优先取前 1-2 个 tags，否则使用 `域名token•category`。
-- `screenshot` 来源：仅使用 Notion 数据库中的截图字段（你手动维护）。
+1. 强制同步并重分类
+2. 检查分类摘要
+3. 锁定分类结果
+4. 如需调整，再解锁后重跑
+5. 如果更新了截图，执行 `pnpm screenshots:promote`
 
-#### Notion 截图展示策略（当前）
+## 参考链接
 
-- 字段命名支持自动识别：`screenshot / screenshoot / preview / thumbnail / 截图 / 预览`。
-- 右下角 hover 面板只显示截图本身：
-  - 有图：展示截图
-  - 无图或加载失败：显示 `Pending`
-- 通过 `/api/notion/screenshot` 做服务端代理与压缩缓存：
-  - 优先读取 `public/screenshot-cache/<pageId>.webp`（静态版，生产最稳定）
-  - 首次请求：拉取 Notion 图片并压缩为 `webp`
-  - 写入磁盘缓存目录：`data/screenshot-cache/`
-  - 后续请求：直接读取磁盘缓存
-  - 后台自动检查 Notion 是否换图，换图后自动刷新缓存
-
-#### 截图静态化（推荐用于 Vercel）
-
-- 目标：把已压缩缓存“固化”为可部署静态文件，避免无状态环境丢缓存。
-- 命令：
-
-```bash
-pnpm screenshots:promote
-```
-
-- 行为：
-  - 将 `data/screenshot-cache/*.webp` 复制到 `public/screenshot-cache/`
-  - 生产环境优先使用 `public` 静态截图
-- 你在 Notion 新增/替换截图后：
-  1. 本地触发一次预览（让代理拉取并压缩最新图）
-  2. 再执行 `pnpm screenshots:promote`
-  3. 提交并部署
-
-#### 分类固定（确认后）
-
-- 你确认分类结果后，调用 `POST /api/notion/classification?action=lock`。
-- 固定后，已锁定 URL 会优先使用锁定的 `category/subcategory`，不会被自动策略反复改写。
-- 固定后新增 URL 也会自动写入锁文件，后续同步不会被自动策略反复改写。
-- 后续你在 Notion 中手动改 `分类/子分类` 时，会覆盖并更新锁定结果（用于手动修正）。
-- `GET /api/notion/classification` 会返回当前分类摘要（每个分类下子分类分布），用于你确认后再 lock。
-
-### 5) 推荐操作流程（分类确认 -> 固定）
-
-1. 强制同步并重分类（拿到最新分类结果）
-
-```bash
-curl -X POST "http://localhost:3000/api/notion/sync?force=1&reclassify=1"
-```
-
-2. 查看分类摘要（确认分类与子分类是否符合预期）
-
-```bash
-curl "http://localhost:3000/api/notion/classification"
-```
-
-3. 确认后锁定分类
-
-```bash
-curl -X POST "http://localhost:3000/api/notion/classification?action=lock"
-```
-
-4. 如需重新开放自动分类（临时调参/重建策略）
-
-```bash
-curl -X POST "http://localhost:3000/api/notion/classification?action=unlock"
-```
-
-> 若你配置了 `NOTION_SYNC_SECRET`，请在以上命令加请求头：`-H "x-sync-secret: <your-secret>"`。
-
-### 6) 手动修正规则（锁定后）
-
-- 建议在 Notion 数据库保留可编辑字段：
-  - `category`（或“分类”）
-  - `subcategory`（或“子分类”）
-- 当你手动填写这两个字段后，下次同步会以手动值为准，并覆盖对应 URL 的锁定结果。
-- 这意味着“自动策略负责初次归类，人工修正负责最终定稿”。
-
-### 7) 前端分类展示规则
-
-- 主分类按英文字母顺序展示（含 `ALL`）。
-- 子分类由真实数据动态生成，并按字母排序。
-- 每个主分类下固定包含一个 `ALL` 子分类入口。
-- 不再使用随机子分类占位。
-
-#### 同步失败回退规则
-
-- Notion 拉取失败时，`/api/sites` 回退顺序：
-  - 约 3 小时前备份快照
-  - 最新备份快照
-  - 当前缓存
-  - 空数组（前端展示空态）
+- shadcn/ui: [https://ui.shadcn.com/](https://ui.shadcn.com/)
+- dany.works: [https://dany.works/](https://dany.works/)
+- identicon prototype: [https://identicon-prototype.labs.vercel.dev/](https://identicon-prototype.labs.vercel.dev/)
+- Hero 动效参考: [https://hackathon.polar.sh/](https://hackathon.polar.sh/)

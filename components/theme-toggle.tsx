@@ -4,11 +4,12 @@ import { CloudRain, Moon, Sun } from "lucide-react";
 
 import { useSiteMode } from "@/components/site-mode-provider";
 import { Button } from "@/components/ui/button";
+import { isDarkFamilyMode } from "@/lib/site-mode";
 import { cn } from "@/lib/utils";
 
 export function ThemeToggle({ className }: { className?: string }) {
   const { mode, toggleDayNight } = useSiteMode();
-  const isDarkFamily = mode === "night" || mode === "midnight";
+  const isDarkFamily = isDarkFamilyMode(mode);
   const isWeatherMode = mode === "summer" || mode === "rain";
   const label = isDarkFamily ? "Switch to day mode (D)" : "Switch to night mode (N)";
 

@@ -203,7 +203,7 @@ function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; classN
         className,
       )}
     >
-      <div className="relative aspect-[4/3] overflow-hidden bg-gradient-to-br from-muted/70 via-muted/35 to-card">
+      <div className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-muted/70 via-muted/35 to-card sm:aspect-[4/3]">
         {shouldRequestScreenshot ? (
           <img
             alt=""
@@ -239,16 +239,26 @@ function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; classN
   );
 }
 
-function IdlePreviewPanel({ category, keyword, total }: { category: Category; keyword: string; total: number }) {
+function IdlePreviewPanel({
+  category,
+  keyword,
+  total,
+  className,
+}: {
+  category: Category;
+  keyword: string;
+  total: number;
+  className?: string;
+}) {
   const label = keyword.trim() ? `Search: ${keyword.trim()}` : category === "ALL" ? "All sites" : category;
 
   return (
-    <aside className="overflow-hidden rounded-none border border-border bg-card">
+    <aside className={cn("overflow-hidden rounded-none border border-border bg-card", className)}>
       <div className="flex items-center justify-between border-b border-border px-3 py-2 text-[11px] text-muted-foreground">
         <span>Preview</span>
         <span>{label}</span>
       </div>
-      <div className="flex aspect-[4/3] flex-col justify-between bg-gradient-to-br from-muted/65 via-muted/25 to-card p-5">
+      <div className="flex aspect-[16/10] flex-col justify-between bg-gradient-to-br from-muted/65 via-muted/25 to-card p-5 sm:aspect-[4/3]">
         <div className="space-y-2.5">
           <p className="text-sm text-foreground">Hover a site to inspect its screenshot.</p>
           <p className="max-w-[28ch] text-xs leading-5 text-muted-foreground">
@@ -327,12 +337,12 @@ function SavedSiteRow({
       onMouseLeave={hidePreview}
       type="button"
     >
-      <div className="flex items-center justify-center pr-1 text-muted-foreground transition-colors duration-150 group-hover:text-foreground">
+      <div className="arcory-site-row-chevron flex items-center justify-center pr-1 text-muted-foreground transition-colors duration-150 group-hover:text-foreground">
         &gt;
       </div>
-      <SiteListAvatar host={targetHost} seed={site.title} />
+      <span className="arcory-site-row-avatar inline-flex"><SiteListAvatar host={targetHost} seed={site.title} /></span>
       <div className="flex min-w-0 flex-1 items-start pl-0">
-        <div className="min-w-0 space-y-0.5">
+        <div className="arcory-site-row-copy min-w-0 space-y-0.5">
           <p className="truncate text-[14px] text-foreground">{site.title}</p>
           <p className="truncate text-[10px] leading-4 text-muted-foreground">
             {metaTokens.map((item, index) => (
@@ -605,159 +615,155 @@ useEffect(() => {
 
   return (
     <main className="arcory-page-shell min-h-[100dvh] bg-background">
-      <div className="arcory-chaos-panel min-h-[100dvh] bg-card lg:grid lg:min-h-[100dvh] lg:grid-cols-[250px_minmax(0,480px)_510px] lg:justify-center xl:grid-cols-[280px_minmax(0,520px)_550px]">
-<div className="px-6 pt-6 lg:min-h-[100dvh] lg:border-r lg:border-border/80 lg:px-0 lg:pr-6 lg:pt-6">
-  <aside className="lg:sticky lg:top-6">
-    <Link
-      className="flex items-center gap-2 text-foreground transition-colors hover:text-foreground/80"
-      href="/"
-    >
-      <IdenticonAvatar
-        className="size-5"
-        monoChroma={0}
-        monoLightnessHigh={0.84}
-        monoLightnessLow={0.12}
-        seed="arcory-logo"
-        size={20}
-        variant="bayer-4x4-mono-oklch"
-      />
-      <span className="text-lg leading-none">Arcory</span>
-    </Link>
-  </aside>
-</div>
+      <div className="arcory-chaos-panel min-h-[100dvh] bg-card xl:grid xl:min-h-[100dvh] xl:grid-cols-[220px_minmax(0,calc(460px+(min(100vw,1728px)-1280px)*0.1919642857))_minmax(0,calc(520px+(min(100vw,1728px)-1280px)*0.2366071429))] xl:justify-center">
+        <div className="arcory-chaos-column px-6 pt-6 xl:min-h-[100dvh] xl:border-r xl:border-border/80 xl:px-0 xl:pr-6 xl:pt-6">
+          <aside className="mx-auto w-full max-w-[720px] xl:sticky xl:top-6 xl:max-w-none">
+            <Link
+              className="arcory-chaos-logo flex items-center gap-2 text-foreground transition-colors hover:text-foreground/80"
+              href="/"
+            >
+              <span className="arcory-chaos-image arcory-chaos-logo-mark inline-flex">
+                <IdenticonAvatar
+                  className="size-5"
+                  monoChroma={0}
+                  monoLightnessHigh={0.84}
+                  monoLightnessLow={0.12}
+                  seed="arcory-logo"
+                  size={20}
+                  variant="bayer-4x4-mono-oklch"
+                />
+              </span>
+              <span className="arcory-chaos-logo-copy text-lg leading-none">Arcory</span>
+            </Link>
+          </aside>
+        </div>
 
-{isListUiVisible ? (
+        <section className="arcory-chaos-column min-w-0 px-6 pb-8 pt-5 sm:pb-10 xl:min-h-[100dvh] xl:px-6 xl:pt-6">
+          <div className="mx-auto flex h-full w-full max-w-[720px] flex-col xl:max-w-none">
+            <section className="flex-1">
+              {isListUiVisible ? (
+                <>
+                  <div className="arcory-chaos-toolbar sticky top-0 z-20 bg-card pb-4 pt-1 xl:top-6 xl:pt-0 xl:before:pointer-events-none xl:before:absolute xl:before:-top-6 xl:before:left-0 xl:before:block xl:before:h-6 xl:before:w-full xl:before:bg-card xl:before:content-['']">
+                    <div aria-label="Site categories" className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px]" role="tablist">
+                      {categories.map((category) => (
+                        <button
+                          aria-selected={activeCategory === category}
+                          className={cn(
+                            "cursor-pointer rounded-none px-1.5 py-1 leading-none transition-colors duration-150",
+                            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+                            "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
+                            activeCategory === category &&
+                              "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80 dark:hover:text-secondary-foreground dark:active:bg-secondary/70 dark:active:text-secondary-foreground",
+                          )}
+                          key={category}
+                          onClick={() => {
+                            setActiveSubcategory("ALL");
+                            setActiveCategory(category);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "ArrowRight") {
+                              event.preventDefault();
+                              switchCategoryByArrow(category, 1);
+                            }
 
-          <div className="px-6 lg:hidden">
-                {displayPreview ? (
-                  <HoverPreviewPanel className="w-full" item={displayPreview} />
-                ) : (
-                  <IdlePreviewPanel category={activeCategory} keyword={keyword} total={filteredSites.length} />
-                )}
-              </div>
-            ) : null}
+                            if (event.key === "ArrowLeft") {
+                              event.preventDefault();
+                              switchCategoryByArrow(category, -1);
+                            }
+                          }}
+                          ref={(node) => {
+                            buttonRefs.current[category] = node;
+                          }}
+                          role="tab"
+                          type="button"
+                        >
+                          {category}
+                        </button>
+                      ))}
+                    </div>
 
-        <section className="min-w-0 px-6 pb-6 lg:min-h-[100dvh] lg:px-6 lg:pt-6">
-              <div className="mx-auto flex h-full w-full max-w-[480px] flex-col">
-                <section className="flex-1">
-                  {isListUiVisible ? (
-                    <>
-                      <div className="sticky top-6 z-20 bg-card pb-4 before:pointer-events-none before:absolute before:-top-6 before:left-0 before:block before:h-6 before:w-full before:bg-card before:content-['']">
-                        <div aria-label="Site categories" className="flex flex-wrap items-center gap-2 text-[13px]" role="tablist">
-                          {categories.map((category) => (
+                    {activeCategory !== "ALL" ? (
+                      <div aria-label={`${activeCategory} subcategories`} className="no-scrollbar mt-2 overflow-x-auto">
+                        <div className="inline-flex min-w-full items-center gap-2 whitespace-nowrap bg-muted px-1 py-1 sm:min-w-0">
+                          {subcategoriesByCategory[activeCategory].map((subcategory) => (
                             <button
-                              aria-selected={activeCategory === category}
+                              aria-pressed={activeSubcategory === subcategory}
                               className={cn(
-                                "cursor-pointer rounded-none px-1.5 py-1 leading-none transition-colors duration-150",
+                                "cursor-pointer rounded-none px-1.5 py-1 text-[11px] leading-none transition-colors duration-150",
                                 "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
                                 "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
-                                activeCategory === category &&
+                                activeSubcategory === subcategory &&
                                   "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80 dark:hover:text-secondary-foreground dark:active:bg-secondary/70 dark:active:text-secondary-foreground",
                               )}
-                              key={category}
-                              onClick={() => {
-                                setActiveSubcategory("ALL");
-                                setActiveCategory(category);
-                              }}
-                              onKeyDown={(event) => {
-                                if (event.key === "ArrowRight") {
-                                  event.preventDefault();
-                                  switchCategoryByArrow(category, 1);
-                                }
-
-                                if (event.key === "ArrowLeft") {
-                                  event.preventDefault();
-                                  switchCategoryByArrow(category, -1);
-                                }
-                              }}
-                              ref={(node) => {
-                                buttonRefs.current[category] = node;
-                              }}
-                              role="tab"
+                              key={subcategory}
+                              onClick={() => setActiveSubcategory((current) => (current === subcategory ? "ALL" : subcategory))}
                               type="button"
                             >
-                              {category}
+                              {subcategory}
                             </button>
                           ))}
                         </div>
-
-                        {activeCategory !== "ALL" ? (
-                          <div aria-label={`${activeCategory} subcategories`} className="no-scrollbar mt-2 overflow-x-auto">
-                            <div className="inline-flex items-center gap-2 whitespace-nowrap bg-muted px-1 py-1">
-                              {subcategoriesByCategory[activeCategory].map((subcategory) => (
-                                <button
-                                  aria-pressed={activeSubcategory === subcategory}
-                                  className={cn(
-                                    "cursor-pointer rounded-none px-1.5 py-1 text-[11px] leading-none transition-colors duration-150",
-                                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                                    "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
-                                    activeSubcategory === subcategory &&
-                                      "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80 dark:hover:text-secondary-foreground dark:active:bg-secondary/70 dark:active:text-secondary-foreground",
-                                  )}
-                                  key={subcategory}
-                                  onClick={() =>
-                                    setActiveSubcategory((current) => (current === subcategory ? "ALL" : subcategory))
-                                  }
-                                  type="button"
-                                >
-                                  {subcategory}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-
-                        <Input
-                          aria-label="Search saved websites"
-                          className="mt-3 h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none focus-visible:ring-0"
-                          placeholder="Search"
-                          value={keyword}
-                          onChange={(event) => setKeyword(event.target.value)}
-                        />
                       </div>
+                    ) : null}
 
-                      <div className="mt-1">
-                        {isLoadingSites ? (
-                          <LoadingSiteRows />
-                        ) : isCategoryEmpty ? (
-                          <ListEmptyState category={activeCategory} mode="category" />
-                        ) : filteredSites.length > 0 ? (
-                          filteredSites.map((site) => (
-                            <SavedSiteRow key={site.id} onPreviewChange={setActivePreview} site={site} />
-                          ))
-                        ) : (
-                          <ListEmptyState category={activeCategory} mode="search" />
-                        )}
-                      </div>
+                    <Input
+                      aria-label="Search saved websites"
+                      className="mt-3 h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none focus-visible:ring-0"
+                      placeholder="Search"
+                      value={keyword}
+                      onChange={(event) => setKeyword(event.target.value)}
+                    />
+                  </div>
 
-                      <div className="py-4 text-center text-xs uppercase tracking-[0.06em] text-foreground">
-                        {isLoadingSites
-                          ? "Loading..."
-                          : isHydratingSites || hasMoreSites
-                            ? `${filteredSites.length} Saves · Syncing more...`
-                            : `${filteredSites.length} Saves`}
+                  <div className="mt-1">
+                    {isLoadingSites ? (
+                      <LoadingSiteRows />
+                    ) : isCategoryEmpty ? (
+                      <div className="arcory-chaos-empty">
+                        <ListEmptyState category={activeCategory} mode="category" />
                       </div>
-                    </>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="h-7 w-48 animate-pulse rounded-none bg-muted/70" />
-                      <div className="h-8 w-full animate-pulse rounded-none bg-muted/60" />
-                      <div className="h-32 w-full animate-pulse rounded-none bg-muted/50" />
-                    </div>
-                  )}
-                </section>
-              </div>
+                    ) : filteredSites.length > 0 ? (
+                      filteredSites.map((site) => <SavedSiteRow key={site.id} onPreviewChange={setActivePreview} site={site} />)
+                    ) : (
+                      <div className="arcory-chaos-empty">
+                        <ListEmptyState category={activeCategory} mode="search" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="arcory-chaos-summary py-4 text-center text-xs uppercase tracking-[0.06em] text-foreground">
+                    {isLoadingSites
+                      ? "Loading..."
+                      : isHydratingSites || hasMoreSites
+                        ? `${filteredSites.length} Saves · Syncing more...`
+                        : `${filteredSites.length} Saves`}
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div className="h-7 w-48 animate-pulse rounded-none bg-muted/70" />
+                  <div className="h-8 w-full animate-pulse rounded-none bg-muted/60" />
+                  <div className="h-32 w-full animate-pulse rounded-none bg-muted/50" />
+                </div>
+              )}
             </section>
+          </div>
+        </section>
 
-        <div className="hidden lg:block lg:min-h-[100dvh] lg:border-l lg:border-border/80 lg:pl-6 lg:pt-6">
-              <aside className="sticky top-6 space-y-4">
-                {displayPreview ? (
-                  <HoverPreviewPanel className="w-full" item={displayPreview} />
-                ) : (
-                  <IdlePreviewPanel category={activeCategory} keyword={keyword} total={filteredSites.length} />
-                )}
-              </aside>
-            </div>
+        <div className="arcory-chaos-column hidden xl:block xl:min-h-[100dvh] xl:border-l xl:border-border/80 xl:pl-6 xl:pt-6">
+          <aside className="sticky top-6 space-y-4">
+            {displayPreview ? (
+              <HoverPreviewPanel className="arcory-chaos-preview w-full" item={displayPreview} />
+            ) : (
+              <IdlePreviewPanel
+                category={activeCategory}
+                className="arcory-chaos-preview"
+                keyword={keyword}
+                total={filteredSites.length}
+              />
+            )}
+          </aside>
+        </div>
       </div>
     </main>
   );

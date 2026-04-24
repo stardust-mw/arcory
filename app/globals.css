@@ -319,16 +319,16 @@ html.arcory-mode-midnight {
   object-position: top;
 }
 
-.arcory-summer-overlay[data-ready="true"] {
+html.arcory-mode-summer .arcory-summer-overlay[data-ready="true"] {
   opacity: 1;
 }
 
-.arcory-rain-overlay[data-ready="true"] {
+html.arcory-mode-rain .arcory-rain-overlay[data-ready="true"] {
   opacity: 0.6;
 }
 
-.arcory-midnight-overlay[data-ready="true"] {
-  opacity: 0.6;
+html.arcory-mode-midnight .arcory-midnight-overlay[data-ready="true"] {
+  opacity: 0.4;
 }
 
 @media (max-width: 768px) {
@@ -337,15 +337,12 @@ html.arcory-mode-midnight {
   }
 }
 
-html.arcory-mode-summer .arcory-summer-overlay {
-  opacity: 1;
-}
 
 .arcory-chaos-overlay {
   position: fixed;
   inset: 0;
   z-index: 9001;
-  overflow: hidden;
+  overflow: visible;
   pointer-events: none;
   user-select: none;
 }
@@ -358,6 +355,7 @@ html.arcory-mode-summer .arcory-summer-overlay {
   overflow: hidden;
   cursor: grab;
   pointer-events: auto;
+  touch-action: none;
   transform-origin: center;
   will-change: transform;
 }

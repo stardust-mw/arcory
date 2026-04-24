@@ -1,9 +1,20 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import type { Body, Engine } from "matter-js";
+import { Bodies, Body as MatterBody, Engine, Sleeping, World, type Body as MatterBodyInstance, type Engine as MatterEngine } from "matter-js";
+import { createContext, useContext, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
-type SiteMode = "day" | "night" | "summer" | "midnight" | "rain";
+import { SiteModeAtmosphere } from "@/components/site-mode-atmosphere";
+import {
+  SITE_MODE_ATMOSPHERES,
+  SITE_MODE_PENDING_SHORTCUT_KEY,
+  SITE_MODE_PENDING_SHORTCUT_MAX_AGE_MS,
+  SITE_MODE_SHORTCUT_KEYS,
+  SITE_MODE_STORAGE_KEY,
+  applySiteMode,
+  getInitialSiteMode,
+  getModeFromShortcut,
+  type SiteMode,
+} from "@/lib/site-mode";
 
 type SiteModeContextValue = {
   mode: SiteMode;
@@ -12,59 +23,72 @@ type SiteModeContextValue = {
   toggleChaos: () => void;
 };
 
-type ChaosItem = {
-  body: Body;
-  node: HTMLDivElement;
-  width: number;
+type ChaosKind = "block" | "word" | "separator";
+
+type ChaosRect = {
+  bottom: number;
   height: number;
+  left: number;
+  right: number;
+  top: number;
+  width: number;
+};
+
+type ChaosSeparatorSide = "left" | "right";
+
+type ChaosCandidate = {
+  content: HTMLElement | string;
+  isTempElement?: boolean;
+  kind: ChaosKind;
+  originalElement?: HTMLElement;
+  rect: ChaosRect;
+  separatorColor?: string;
+  separatorSide?: ChaosSeparatorSide;
+  separatorWidth?: number;
+  styleSource?: HTMLElement;
+};
+
+type ChaosRestoreTarget = {
+  element: HTMLElement;
+  html: string | null;
+  visibility: string;
+};
+
+type ChaosStyleRestore = {
+  element: HTMLElement;
+  property: "borderLeft" | "borderRight" | "borderTop" | "borderBottom" | "borderBottomColor";
+  value: string;
+};
+
+type ChaosItem = {
+  body: MatterBodyInstance;
+  height: number;
+  isTempElement: boolean;
+  kind: ChaosKind;
+  node: HTMLDivElement;
+  originalElement?: HTMLElement;
+  originalVisibility?: string;
   originX: number;
   originY: number;
+  width: number;
 };
 
 type ChaosState = {
-  overlay: HTMLDivElement;
-  engine: Engine;
-  items: ChaosItem[];
-  rafId: number;
-  rootVisibility: string;
   bodyOverflow: string;
+  borderRestores: ChaosStyleRestore[];
   cleanup: () => void;
+  engine: MatterEngine;
+  hiddenRoot?: HTMLElement;
+  items: ChaosItem[];
+  overlay: HTMLDivElement;
+  rafId: number;
+  restoreTargets: ChaosRestoreTarget[];
+  rootVisibility?: string;
 };
 
-type MatterModule = typeof import("matter-js");
-
-const STORAGE_KEY = "arcory-site-mode";
-const MODE_CLASSES = [
-  "dark",
-  "arcory-mode-day",
-  "arcory-mode-night",
-  "arcory-mode-summer",
-  "arcory-mode-midnight",
-  "arcory-mode-rain",
-];
 
 const SiteModeContext = createContext<SiteModeContextValue | null>(null);
-
-function isSiteMode(value: string | null): value is SiteMode {
-  return value === "day" || value === "night" || value === "summer" || value === "midnight" || value === "rain";
-}
-
-function getInitialMode(): SiteMode {
-  if (typeof window === "undefined") return "day";
-
-  const savedMode = window.localStorage.getItem(STORAGE_KEY);
-  if (isSiteMode(savedMode)) return savedMode;
-
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "day";
-}
-
-function applyMode(mode: SiteMode) {
-  const root = document.documentElement;
-  root.classList.remove(...MODE_CLASSES);
-  root.classList.add(`arcory-mode-${mode}`);
-  root.classList.toggle("dark", mode === "night" || mode === "midnight");
-  root.dataset.siteMode = mode;
-}
+const SITE_MODE_SHORTCUT_KEY_SET = new Set<string>(SITE_MODE_SHORTCUT_KEYS);
 
 function shouldIgnoreShortcut(event: KeyboardEvent) {
   if (event.metaKey || event.ctrlKey || event.altKey) return true;
@@ -79,7 +103,18 @@ function isVisibleElement(element: Element) {
   return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
 }
 
-function isFullyVisible(rect: DOMRect) {
+function toChaosRect(rect: Pick<DOMRect, "bottom" | "height" | "left" | "right" | "top" | "width">): ChaosRect {
+  return {
+    bottom: rect.bottom,
+    height: rect.height,
+    left: rect.left,
+    right: rect.right,
+    top: rect.top,
+    width: rect.width,
+  };
+}
+
+function isFullyVisible(rect: Pick<ChaosRect, "bottom" | "height" | "left" | "right" | "top" | "width">) {
   return rect.width > 1 && rect.height > 1 && rect.top >= 0 && rect.left >= 0 && rect.bottom <= window.innerHeight && rect.right <= window.innerWidth;
 }
 
@@ -96,27 +131,86 @@ function copyTextStyles(source: HTMLElement, target: HTMLElement) {
   target.style.whiteSpace = "nowrap";
 }
 
-function createOverlayItem(candidate: {
-  rect: DOMRect;
-  content: Node | string;
-  kind: "block" | "word";
-}) {
-  const width = Math.max(2, candidate.rect.width);
-  const height = Math.max(2, candidate.rect.height);
+function normalizeColor(value: string) {
+  const normalized = value.trim().toLowerCase();
+  const match = normalized.match(/^okl(ab|ch)\((.+)\)$/);
+  if (!match) return value;
+
+  const [channelsPart, alphaPart] = match[2].split("/").map((part) => part.trim());
+  const channels = channelsPart.split(/\s+/).map(Number);
+  const alpha = alphaPart ? Number(alphaPart) : 1;
+  if (channels.some((channel) => Number.isNaN(channel)) || Number.isNaN(alpha)) return value;
+
+  const [l, second, third] = channels;
+  const [a, b] =
+    match[1] === "ch"
+      ? [second * Math.cos((third * Math.PI) / 180), second * Math.sin((third * Math.PI) / 180)]
+      : [second, third];
+
+  const lComponent = l + 0.3963377774 * a + 0.2158037573 * b;
+  const mComponent = l - 0.1055613458 * a - 0.0638541728 * b;
+  const sComponent = l - 0.0894841775 * a - 1.291485548 * b;
+
+  const lCube = lComponent ** 3;
+  const mCube = mComponent ** 3;
+  const sCube = sComponent ** 3;
+
+  const toSrgb = (channel: number) => {
+    const clamped = Math.max(0, Math.min(1, channel));
+    if (clamped <= 0.0031308) return 12.92 * clamped;
+    return 1.055 * clamped ** (1 / 2.4) - 0.055;
+  };
+
+  const redLinear = 4.0767416621 * lCube - 3.3077115913 * mCube + 0.2309699292 * sCube;
+  const greenLinear = -1.2684380046 * lCube + 2.6097574011 * mCube - 0.3413193965 * sCube;
+  const blueLinear = -0.0041960863 * lCube - 0.7034186147 * mCube + 1.707614701 * sCube;
+
+  const red = Math.round(toSrgb(redLinear) * 255);
+  const green = Math.round(toSrgb(greenLinear) * 255);
+  const blue = Math.round(toSrgb(blueLinear) * 255);
+  const opacity = Math.max(0, Math.min(1, alpha));
+
+  return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
+}
+
+function createOverlayItem(candidate: ChaosCandidate) {
+  const width = candidate.kind === "separator" ? Math.max(1, Math.round(candidate.separatorWidth ?? candidate.rect.width)) : Math.max(2, candidate.rect.width);
+  const height = candidate.kind === "separator" ? Math.max(2, candidate.rect.height) : Math.max(2, candidate.rect.height);
   const originX = candidate.rect.left + width / 2;
   const originY = candidate.rect.top + height / 2;
   const node = document.createElement("div");
 
   node.className = "arcory-chaos-piece";
+  node.dataset.kind = candidate.kind;
   node.style.width = `${width}px`;
   node.style.height = `${height}px`;
   node.style.transform = `translate(${originX - width / 2}px, ${originY - height / 2}px)`;
 
-  if (typeof candidate.content === "string") {
+  if (candidate.kind === "separator") {
+    const line = document.createElement("div");
+    line.style.position = "absolute";
+    line.style.top = "0";
+    line.style.bottom = "0";
+    line.style.width = `${candidate.separatorWidth ?? 1}px`;
+    line.style.pointerEvents = "none";
+    line.style.backgroundColor = candidate.separatorColor ?? "currentColor";
+
+    if (candidate.separatorSide === "left") {
+      line.style.left = "0";
+    } else {
+      line.style.right = "0";
+    }
+
+    node.appendChild(line);
+  } else if (typeof candidate.content === "string") {
     node.textContent = candidate.content;
     node.classList.add("arcory-chaos-word");
   } else {
     const clone = candidate.content.cloneNode(true) as HTMLElement;
+    const position = window.getComputedStyle(candidate.content).position;
+    if (position === "fixed" || position === "sticky") {
+      clone.style.position = "static";
+    }
     clone.style.width = `${width}px`;
     clone.style.height = `${height}px`;
     clone.style.margin = "0";
@@ -128,21 +222,236 @@ function createOverlayItem(candidate: {
   return { node, width, height, originX, originY };
 }
 
-function collectChaosCandidates(root: HTMLElement) {
-  const candidates: Array<{ rect: DOMRect; content: Node | string; kind: "block" | "word"; styleSource?: HTMLElement }> = [];
+function wrapTextNodes(node: Node) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent ?? "";
+    if (!text.trim()) return;
+
+    const fragment = document.createDocumentFragment();
+    for (const part of text.split(/(\s+)/)) {
+      if (!part) continue;
+      if (/^\s+$/.test(part)) {
+        fragment.appendChild(document.createTextNode(part));
+        continue;
+      }
+
+      const span = document.createElement("span");
+      span.className = "_cw";
+      span.style.display = "inline-block";
+      span.textContent = part;
+      fragment.appendChild(span);
+    }
+
+    node.parentNode?.replaceChild(fragment, node);
+    return;
+  }
+
+  if (node.nodeType !== Node.ELEMENT_NODE) return;
+  const element = node as HTMLElement;
+  if (["IMG", "VIDEO", "SVG", "CANVAS", "BUTTON", "INPUT"].includes(element.tagName)) return;
+
+  Array.from(element.childNodes).forEach(wrapTextNodes);
+}
+
+function collectDesktopChaos(root: HTMLElement) {
+  if (window.innerWidth < 1024) return null;
+
+  const viewportHeight = window.innerHeight;
+  const viewportWidth = window.innerWidth;
+  const columns = Array.from(root.querySelectorAll<HTMLElement>(".arcory-chaos-column"));
+  if (columns.length === 0) return null;
+
+  const candidates: ChaosCandidate[] = [];
+  const restoreTargets: ChaosRestoreTarget[] = [];
+  const borderRestores: ChaosStyleRestore[] = [];
+
+  const hideElement = (element: HTMLElement | null | undefined) => {
+    if (!element) return;
+    restoreTargets.push({
+      element,
+      html: null,
+      visibility: element.style.visibility,
+    });
+    element.style.visibility = "hidden";
+  };
+
+  const addBlock = (element: HTMLElement | null | undefined, kind: ChaosKind = "block") => {
+    if (!element || !isVisibleElement(element)) return;
+    const rect = element.getBoundingClientRect();
+    if (!isFullyVisible(rect)) return;
+    candidates.push({
+      content: element,
+      kind,
+      originalElement: element,
+      rect: toChaosRect(rect),
+    });
+  };
+
+  const addSeparator = (rect: ChaosRect, separatorColor: string, separatorSide: ChaosSeparatorSide, separatorWidth: number) => {
+    if (rect.width < 1 || rect.height < 1 || rect.top < 0 || rect.left < 0 || rect.bottom > viewportHeight || rect.right > viewportWidth) {
+      return;
+    }
+
+    candidates.push({
+      content: root,
+      kind: "separator",
+      rect,
+      separatorColor: normalizeColor(separatorColor),
+      separatorSide,
+      separatorWidth,
+    });
+  };
+
+  const splitContainer = (element: HTMLElement | null | undefined) => {
+    if (!element || !isVisibleElement(element) || !element.textContent?.trim()) return;
+
+    restoreTargets.push({
+      element,
+      html: element.innerHTML,
+      visibility: element.style.visibility,
+    });
+
+    Array.from(element.childNodes).forEach(wrapTextNodes);
+    element.querySelectorAll<HTMLElement>("._cw").forEach((span) => {
+      const rect = span.getBoundingClientRect();
+      if (!isFullyVisible(rect)) return;
+      candidates.push({
+        content: span.textContent ?? "",
+        kind: "word",
+        rect: toChaosRect(rect),
+        styleSource: span,
+      });
+    });
+
+    element.style.visibility = "hidden";
+  };
+
+  hideElement(root.querySelector<HTMLElement>(".arcory-chaos-logo-mark"));
+  splitContainer(root.querySelector<HTMLElement>(".arcory-chaos-logo-copy"));
+
+  const toolbar = root.querySelector<HTMLElement>(".arcory-chaos-toolbar");
+  toolbar?.querySelectorAll<HTMLElement>("button, input").forEach((element) => addBlock(element));
+
+  const siteRows = Array.from(root.querySelectorAll<HTMLElement>(".arcory-site-row"));
+  if (siteRows.length === 0) {
+    root.querySelectorAll<HTMLElement>(".animate-pulse").forEach((element) => addBlock(element));
+  }
+
+  siteRows.forEach((row) => {
+    const rect = row.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1 || rect.bottom < 0 || rect.top > viewportHeight) return;
+
+    addBlock(row.querySelector<HTMLElement>(".arcory-site-row-chevron"));
+    addBlock(row.querySelector<HTMLElement>(".arcory-site-row-avatar"));
+    splitContainer(row.querySelector<HTMLElement>(".arcory-site-row-copy"));
+    borderRestores.push({
+      element: row,
+      property: "borderBottomColor",
+      value: row.style.borderBottomColor,
+    });
+    row.style.borderBottomColor = "transparent";
+  });
+
+  splitContainer(root.querySelector<HTMLElement>(".arcory-chaos-summary"));
+  root.querySelectorAll<HTMLElement>(".arcory-chaos-empty").forEach((element) => splitContainer(element));
+  root.querySelectorAll<HTMLElement>(".arcory-chaos-preview").forEach((element) => hideElement(element));
+
+  for (const column of columns) {
+    const rect = column.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) continue;
+
+    const style = window.getComputedStyle(column);
+    const rightWidth = parseFloat(style.borderRightWidth) || 0;
+    const rightColor = style.borderRightColor;
+    if (rightWidth >= 1 && rect.right > 0 && rect.left < viewportWidth) {
+      borderRestores.push({
+        element: column,
+        property: "borderRight",
+        value: column.style.borderRight,
+      });
+      column.style.borderRight = "none";
+
+      addSeparator(
+        {
+          bottom: viewportHeight,
+          height: viewportHeight,
+          left: rect.right - rightWidth,
+          right: rect.right,
+          top: 0,
+          width: rightWidth,
+        },
+        rightColor,
+        "right",
+        rightWidth,
+      );
+    }
+
+    const leftWidth = parseFloat(style.borderLeftWidth) || 0;
+    const leftColor = style.borderLeftColor;
+    if (leftWidth >= 1 && rect.right > 0 && rect.left < viewportWidth) {
+      borderRestores.push({
+        element: column,
+        property: "borderLeft",
+        value: column.style.borderLeft,
+      });
+      column.style.borderLeft = "none";
+
+      addSeparator(
+        {
+          bottom: viewportHeight,
+          height: viewportHeight,
+          left: rect.left - leftWidth,
+          right: rect.left,
+          top: 0,
+          width: leftWidth,
+        },
+        leftColor,
+        "left",
+        leftWidth,
+      );
+    }
+  }
+
+  const ordered = candidates
+    .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)
+    .slice(0, 700);
+
+  if (ordered.length === 0) return null;
+
+  return {
+    borderRestores,
+    candidates: ordered,
+    hideRoot: false,
+    restoreTargets,
+  };
+}
+
+function collectFallbackChaos(root: HTMLElement) {
+  const candidates: ChaosCandidate[] = [];
   const blockElements = Array.from(
     root.querySelectorAll<HTMLElement>(
       "button, input, img, video, svg, canvas, [role='button'], .arcory-chaos-block",
     ),
   );
   const blockedTextRoots = new WeakSet<Node>();
+  const restoreTargets: ChaosRestoreTarget[] = [];
+
+  root.querySelectorAll<HTMLElement>(".arcory-chaos-image, .arcory-chaos-preview").forEach((element) => {
+    restoreTargets.push({ element, html: null, visibility: element.style.visibility });
+    element.style.visibility = "hidden";
+  });
 
   for (const element of blockElements) {
+    if (element.closest(".arcory-chaos-image, .arcory-chaos-preview")) continue;
     if (!isVisibleElement(element)) continue;
     const rect = element.getBoundingClientRect();
     if (!isFullyVisible(rect)) continue;
     if (rect.width >= window.innerWidth * 0.92 || rect.height >= window.innerHeight * 0.92) continue;
-    candidates.push({ rect, content: element, kind: "block" });
+    candidates.push({
+      content: element,
+      kind: "block",
+      rect: toChaosRect(rect),
+    });
     element.querySelectorAll("*").forEach((child) => blockedTextRoots.add(child));
     blockedTextRoots.add(element);
   }
@@ -172,20 +481,29 @@ function collectChaosCandidates(root: HTMLElement) {
       const rect = range.getBoundingClientRect();
       range.detach();
       if (!isFullyVisible(rect)) continue;
-      candidates.push({ rect, content: word, kind: "word", styleSource: parent });
+      candidates.push({
+        content: word,
+        kind: "word",
+        rect: toChaosRect(rect),
+        styleSource: parent,
+      });
     }
   }
 
-  candidates.sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
-
-  return candidates.slice(0, 900);
+  return {
+    borderRestores: [],
+    candidates: candidates
+      .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)
+      .slice(0, 900),
+    hideRoot: true,
+    restoreTargets,
+  };
 }
 
-async function createChaos(root: HTMLElement, matter: MatterModule): Promise<ChaosState | null> {
-  const candidates = collectChaosCandidates(root);
-  if (candidates.length === 0) return null;
+function createChaos(root: HTMLElement): ChaosState | null {
+  const snapshot = collectDesktopChaos(root) ?? collectFallbackChaos(root);
+  if (snapshot.candidates.length === 0) return null;
 
-  const { Engine, Bodies, Body: MatterBody, World, Sleeping } = matter;
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
   const wallWidth = 120;
@@ -193,7 +511,7 @@ async function createChaos(root: HTMLElement, matter: MatterModule): Promise<Cha
   const world = engine.world;
   const overlay = document.createElement("div");
   const items: ChaosItem[] = [];
-  let dragBody: Body | null = null;
+  let dragBody: MatterBodyInstance | null = null;
   let dragOffsetX = 0;
   let dragOffsetY = 0;
   let dragLastX = 0;
@@ -216,7 +534,7 @@ async function createChaos(root: HTMLElement, matter: MatterModule): Promise<Cha
     }),
   ]);
 
-  for (const candidate of candidates) {
+  for (const candidate of snapshot.candidates) {
     const overlayItem = createOverlayItem(candidate);
     if (candidate.kind === "word" && candidate.styleSource) {
       copyTextStyles(candidate.styleSource, overlayItem.node);
@@ -224,16 +542,27 @@ async function createChaos(root: HTMLElement, matter: MatterModule): Promise<Cha
 
     overlay.appendChild(overlayItem.node);
     const body = Bodies.rectangle(overlayItem.originX, overlayItem.originY, overlayItem.width, overlayItem.height, {
-      friction: candidate.kind === "word" ? 0.42 : 0.72,
-      frictionAir: candidate.kind === "word" ? 0.0032 : 0.0046,
-      restitution: candidate.kind === "word" ? 0.16 : 0.08,
+      ...(candidate.kind === "separator"
+        ? { density: 0.0003, friction: 0.2, frictionAir: 0.001, restitution: 0.5 }
+        : candidate.kind === "word"
+          ? { friction: 0.42, frictionAir: 0.0032, restitution: 0.16 }
+          : { friction: 0.72, frictionAir: 0.0046, restitution: 0.08 }),
     });
     World.add(world, body);
-    MatterBody.setAngle(body, (Math.random() - 0.5) * 0.08);
+
+    MatterBody.setAngle(body, candidate.kind === "separator" ? (Math.random() - 0.5) * 0.12 : (Math.random() - 0.5) * 0.08);
+    if (candidate.kind === "separator") {
+      MatterBody.setAngularVelocity(body, (Math.random() - 0.5) * 0.04);
+    }
     MatterBody.setVelocity(body, {
-      x: (Math.random() - 0.5) * (candidate.kind === "word" ? 0.8 : 0.45),
-      y: Math.random() * (candidate.kind === "word" ? 0.35 : 0.18),
+      x: (Math.random() - 0.5) * (candidate.kind === "word" ? 0.8 : candidate.kind === "separator" ? 0.9 : 0.45),
+      y: Math.random() * (candidate.kind === "word" ? 0.35 : candidate.kind === "separator" ? 0.16 : 0.18),
     });
+
+    const originalVisibility = candidate.originalElement?.style.visibility ?? "";
+    if (candidate.originalElement && !candidate.isTempElement) {
+      candidate.originalElement.style.visibility = "hidden";
+    }
 
     overlayItem.node.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 && event.pointerType === "mouse") return;
@@ -258,7 +587,18 @@ async function createChaos(root: HTMLElement, matter: MatterModule): Promise<Cha
       dragBody = null;
     });
 
-    items.push({ body, ...overlayItem });
+    items.push({
+      body,
+      height: overlayItem.height,
+      isTempElement: Boolean(candidate.isTempElement),
+      kind: candidate.kind,
+      node: overlayItem.node,
+      originalElement: candidate.originalElement,
+      originalVisibility,
+      originX: overlayItem.originX,
+      originY: overlayItem.originY,
+      width: overlayItem.width,
+    });
   }
 
   function onPointerMove(event: PointerEvent) {
@@ -279,9 +619,14 @@ async function createChaos(root: HTMLElement, matter: MatterModule): Promise<Cha
   document.addEventListener("pointermove", onPointerMove);
   document.addEventListener("pointerup", onPointerUp);
 
-  const rootVisibility = root.style.visibility;
   const bodyOverflow = document.body.style.overflow;
-  root.style.visibility = "hidden";
+  let hiddenRoot: HTMLElement | undefined;
+  let rootVisibility: string | undefined;
+  if (snapshot.hideRoot) {
+    hiddenRoot = root;
+    rootVisibility = root.style.visibility;
+    root.style.visibility = "hidden";
+  }
   document.body.style.overflow = "hidden";
 
   let rafId = 0;
@@ -296,28 +641,31 @@ async function createChaos(root: HTMLElement, matter: MatterModule): Promise<Cha
   rafId = window.requestAnimationFrame(tick);
 
   return {
-    overlay,
-    engine,
-    items,
-    rafId,
-    rootVisibility,
     bodyOverflow,
+    borderRestores: snapshot.borderRestores,
     cleanup: () => {
       document.removeEventListener("pointermove", onPointerMove);
       document.removeEventListener("pointerup", onPointerUp);
     },
+    engine,
+    hiddenRoot,
+    items,
+    overlay,
+    rafId,
+    restoreTargets: snapshot.restoreTargets,
+    rootVisibility,
   };
 }
 
-function reverseChaos(root: HTMLElement, state: ChaosState, onDone: () => void) {
+function reverseChaos(_root: HTMLElement, state: ChaosState, onDone: () => void) {
   window.cancelAnimationFrame(state.rafId);
   state.cleanup();
 
   const snapshots = state.items.map((item) => ({
     ...item,
+    fromAngle: item.body.angle,
     fromX: item.body.position.x,
     fromY: item.body.position.y,
-    fromAngle: item.body.angle,
   }));
   const startedAt = window.performance.now();
   const duration = 720;
@@ -339,7 +687,27 @@ function reverseChaos(root: HTMLElement, state: ChaosState, onDone: () => void) 
       return;
     }
 
-    root.style.visibility = state.rootVisibility;
+    for (const item of state.items) {
+      if (item.isTempElement) {
+        item.originalElement?.remove();
+        continue;
+      }
+      if (item.kind !== "word" && item.originalElement) {
+        item.originalElement.style.visibility = item.originalVisibility ?? "";
+      }
+    }
+
+    state.restoreTargets.forEach(({ element, html, visibility }) => {
+      if (html !== null) element.innerHTML = html;
+      element.style.visibility = visibility;
+    });
+    state.borderRestores.forEach(({ element, property, value }) => {
+      element.style[property] = value;
+    });
+
+    if (state.hiddenRoot) {
+      state.hiddenRoot.style.visibility = state.rootVisibility ?? "";
+    }
     document.body.style.overflow = state.bodyOverflow;
     state.overlay.remove();
     matterCleanup(state.engine);
@@ -349,10 +717,27 @@ function reverseChaos(root: HTMLElement, state: ChaosState, onDone: () => void) 
   state.rafId = window.requestAnimationFrame(animate);
 }
 
-function matterCleanup(engine: Engine) {
+function matterCleanup(engine: MatterEngine) {
   engine.world.bodies.length = 0;
   engine.world.constraints.length = 0;
   engine.world.composites.length = 0;
+}
+
+function consumePendingShortcut() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(SITE_MODE_PENDING_SHORTCUT_KEY);
+    if (!raw) return null;
+    window.sessionStorage.removeItem(SITE_MODE_PENDING_SHORTCUT_KEY);
+
+    const parsed = JSON.parse(raw) as { key?: string; timestamp?: number };
+    if (!parsed.key || typeof parsed.timestamp !== "number") return null;
+    if (Date.now() - parsed.timestamp > SITE_MODE_PENDING_SHORTCUT_MAX_AGE_MS) return null;
+    return parsed.key.toLowerCase();
+  } catch {
+    return null;
+  }
 }
 
 export function useSiteMode() {
@@ -366,15 +751,9 @@ export function useSiteMode() {
 export function SiteModeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<SiteMode>("day");
   const [isModeReady, setIsModeReady] = useState(false);
-  const [isSummerVideoReady, setIsSummerVideoReady] = useState(false);
-  const [isRainVideoReady, setIsRainVideoReady] = useState(false);
-  const [isMidnightVideoReady, setIsMidnightVideoReady] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const chaosStateRef = useRef<ChaosState | null>(null);
   const chaosLockedRef = useRef(false);
-  const summerVideoRef = useRef<HTMLVideoElement | null>(null);
-  const rainVideoRef = useRef<HTMLVideoElement | null>(null);
-  const midnightVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const setMode = (nextMode: SiteMode) => {
     setModeState(nextMode);
@@ -384,7 +763,7 @@ export function SiteModeProvider({ children }: { children: ReactNode }) {
     setModeState((current) => (current === "night" || current === "midnight" ? "day" : "night"));
   };
 
-  const toggleChaos = async () => {
+  const toggleChaos = () => {
     if (chaosLockedRef.current) return;
     const root = rootRef.current;
     if (!root) return;
@@ -400,136 +779,68 @@ export function SiteModeProvider({ children }: { children: ReactNode }) {
     }
 
     chaosLockedRef.current = true;
-    const matter = await import("matter-js");
-    const chaos = await createChaos(root, matter);
-    chaosStateRef.current = chaos;
-    chaosLockedRef.current = false;
+    try {
+      const chaos = createChaos(root);
+      chaosStateRef.current = chaos;
+    } catch (error) {
+      console.error("Failed to toggle chaos mode", error);
+    } finally {
+      chaosLockedRef.current = false;
+    }
   };
 
   useEffect(() => {
-    const initialMode = getInitialMode();
-    setModeState(initialMode);
-    applyMode(initialMode);
+    const initialMode = getInitialSiteMode();
+    const pendingShortcut = consumePendingShortcut();
+    const root = document.documentElement;
+    root.dataset.arcoryHydrated = "true";
+
+    const shortcutMode = getModeFromShortcut(pendingShortcut);
+    const nextMode = shortcutMode ?? initialMode;
+    setModeState(nextMode);
+    applySiteMode(nextMode);
     setIsModeReady(true);
+
+    if (pendingShortcut === "c") {
+      window.setTimeout(() => {
+        toggleChaos();
+      }, 0);
+    }
+
+    return () => {
+      delete root.dataset.arcoryHydrated;
+    };
   }, []);
 
   useEffect(() => {
     if (!isModeReady) return;
-    applyMode(mode);
-    window.localStorage.setItem(STORAGE_KEY, mode);
+    applySiteMode(mode);
+    window.localStorage.setItem(SITE_MODE_STORAGE_KEY, mode);
   }, [isModeReady, mode]);
 
-  useEffect(() => {
-    const video = summerVideoRef.current;
-    if (!video) return;
+  const handleShortcut = useEffectEvent((event: KeyboardEvent) => {
+    if (shouldIgnoreShortcut(event)) return;
+    const key = event.key.toLowerCase();
+    if (!SITE_MODE_SHORTCUT_KEY_SET.has(key)) return;
+    event.preventDefault();
 
-    if (mode === "summer") {
-      if (video.readyState >= 2) {
-        setIsSummerVideoReady(true);
-        void video.play().catch(() => {});
-        return;
-      }
-
-      setIsSummerVideoReady(false);
-
-      const handleLoadedData = () => {
-        setIsSummerVideoReady(true);
-        void video.play().catch(() => {});
-      };
-
-      video.addEventListener("loadeddata", handleLoadedData, { once: true });
-      video.load();
-
-      return () => {
-        video.removeEventListener("loadeddata", handleLoadedData);
-      };
-    }
-    setIsSummerVideoReady(false);
-
-    video.pause();
-    video.currentTime = 0;
-  }, [mode]);
-
-  useEffect(() => {
-    const video = rainVideoRef.current;
-    if (!video) return;
-
-    if (mode === "rain") {
-      if (video.readyState >= 2) {
-        setIsRainVideoReady(true);
-        void video.play().catch(() => {});
-        return;
-      }
-
-      setIsRainVideoReady(false);
-
-      const handleLoadedData = () => {
-        setIsRainVideoReady(true);
-        void video.play().catch(() => {});
-      };
-
-      video.addEventListener("loadeddata", handleLoadedData, { once: true });
-      video.load();
-
-      return () => {
-        video.removeEventListener("loadeddata", handleLoadedData);
-      };
+    if (key === "c") {
+      toggleChaos();
+      return;
     }
 
-    setIsRainVideoReady(false);
-    video.pause();
-    video.currentTime = 0;
-  }, [mode]);
-
-  useEffect(() => {
-    const video = midnightVideoRef.current;
-    if (!video) return;
-
-    if (mode === "midnight") {
-      if (video.readyState >= 2) {
-        setIsMidnightVideoReady(true);
-        void video.play().catch(() => {});
-        return;
-      }
-
-      setIsMidnightVideoReady(false);
-
-      const handleLoadedData = () => {
-        setIsMidnightVideoReady(true);
-        void video.play().catch(() => {});
-      };
-
-      video.addEventListener("loadeddata", handleLoadedData, { once: true });
-      video.load();
-
-      return () => {
-        video.removeEventListener("loadeddata", handleLoadedData);
-      };
-    }
-
-    setIsMidnightVideoReady(false);
-    video.pause();
-    video.currentTime = 0;
-  }, [mode]);
+    const nextMode = getModeFromShortcut(key);
+    if (nextMode) setMode(nextMode);
+  });
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (shouldIgnoreShortcut(event)) return;
-      const key = event.key.toLowerCase();
-      if (!["d", "s", "n", "m", "r", "c"].includes(key)) return;
-      event.preventDefault();
-
-      if (key === "d") setMode("day");
-      if (key === "s") setMode("summer");
-      if (key === "n") setMode("night");
-      if (key === "m") setMode("midnight");
-      if (key === "r") setMode("rain");
-      if (key === "c") void toggleChaos();
+      handleShortcut(event);
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  });
+  }, []);
 
   useEffect(() => {
     const rootElement = rootRef.current;
@@ -539,7 +850,23 @@ export function SiteModeProvider({ children }: { children: ReactNode }) {
       if (!activeChaos || !rootElement) return;
       window.cancelAnimationFrame(activeChaos.rafId);
       activeChaos.cleanup();
-      rootElement.style.visibility = activeChaos.rootVisibility;
+      activeChaos.restoreTargets.forEach(({ element, html, visibility }) => {
+        if (html !== null) element.innerHTML = html;
+        element.style.visibility = visibility;
+      });
+      activeChaos.borderRestores.forEach(({ element, property, value }) => {
+        element.style[property] = value;
+      });
+      activeChaos.items.forEach((item) => {
+        if (item.isTempElement) {
+          item.originalElement?.remove();
+          return;
+        }
+        if (item.kind !== "word" && item.originalElement) {
+          item.originalElement.style.visibility = item.originalVisibility ?? "";
+        }
+      });
+      if (activeChaos.hiddenRoot) activeChaos.hiddenRoot.style.visibility = activeChaos.rootVisibility ?? "";
       document.body.style.overflow = activeChaos.bodyOverflow;
       activeChaos.overlay.remove();
     };
@@ -550,39 +877,9 @@ export function SiteModeProvider({ children }: { children: ReactNode }) {
       <div className="arcory-chaos-root" ref={rootRef}>
         {children}
       </div>
-      <video
-        aria-hidden="true"
-        className="arcory-summer-overlay"
-        data-ready={isSummerVideoReady ? "true" : "false"}
-        loop
-        muted
-        playsInline
-        preload="auto"
-        ref={summerVideoRef}
-        src="/leaves.mp4"
-      />
-      <video
-        aria-hidden="true"
-        className="arcory-midnight-overlay"
-        data-ready={isMidnightVideoReady ? "true" : "false"}
-        loop
-        muted
-        playsInline
-        preload="auto"
-        ref={midnightVideoRef}
-        src="/moon.mp4"
-      />
-      <video
-        aria-hidden="true"
-        className="arcory-rain-overlay"
-        data-ready={isRainVideoReady ? "true" : "false"}
-        loop
-        muted
-        playsInline
-        preload="auto"
-        ref={rainVideoRef}
-        src="/rain.mp4"
-      />
+      {SITE_MODE_ATMOSPHERES.map((config) => (
+        <SiteModeAtmosphere activeMode={mode} config={config} key={config.mode} />
+      ))}
     </SiteModeContext.Provider>
   );
 }
