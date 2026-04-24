@@ -8,9 +8,8 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans:
-    var(--font-geist-mono),
-    "Geist Mono",
-    "Geist Mono Fallback",
+    var(--font-fragment-mono),
+    "Fragment Mono",
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
@@ -24,9 +23,8 @@
     "Segoe UI Symbol",
     "Noto Color Emoji";
   --font-mono:
-    var(--font-geist-mono),
-    "Geist Mono",
-    "Geist Mono Fallback",
+    var(--font-fragment-mono),
+    "Fragment Mono",
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
@@ -385,8 +383,7 @@ html.arcory-mode-summer .arcory-summer-overlay {
 
   body {
     font-family:
-      "Geist Mono",
-      "Geist Mono Fallback",
+      "Fragment Mono",
       -apple-system,
       BlinkMacSystemFont,
       "Segoe UI",
@@ -417,5 +414,10 @@ html.arcory-mode-summer .arcory-summer-overlay {
 
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  html.arcory-mode-day .arcory-site-row:hover,
+  html.arcory-mode-day .arcory-site-row:focus-visible {
+    background-color: oklch(0.9294 0.0091 78.28 / 0.85);
   }
 }
