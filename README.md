@@ -74,6 +74,107 @@ pnpm dev
 
 默认访问地址：`http://localhost:3000`
 
+## 模式切换系统
+
+当前模式系统由 `SiteModeProvider` + `html.arcory-mode-*` 运行时类名 + 全局 design tokens + 视频覆盖层共同组成。
+目标不是只切换“深浅色”，而是把 `D / S / N / M / R / C` 做成一套可切换的页面状态机。
+
+### 运行机制
+
+- 默认 SSR 输出为 `day`：`app/layout.tsx` 在 `<html>` 上写入 `class="arcory-mode-day"` 和 `data-site-mode="day"`，避免首屏没有模式类。
+- 客户端挂载后，`components/site-mode-provider.tsx` 会读取 `localStorage("arcory-site-mode")`。
+- 如果本地没有保存值，则按 `prefers-color-scheme: dark` 在首屏后回退到 `night` 或 `day`。
+- 每次切换模式时，`applyMode()` 会统一更新：
+  - `<html>` 上的 `arcory-mode-day / night / summer / midnight / rain`
+  - `data-site-mode`
+  - `.dark` 这个选择器钩子
+- `.dark` 本身不承载颜色，只是给 Tailwind / shadcn 的 `dark:*` 变体一个命中入口；真正的 token 值都写在 `html.arcory-mode-*` 上。
+
+### 快捷键
+
+全局键盘监听在 `SiteModeProvider` 内实现，并且会跳过 `input / textarea / select / contenteditable`：
+
+- `D`：day
+- `S`：summer
+- `N`：night
+- `M`：midnight
+- `R`：rain
+- `C`：chaos
+
+### Token 组织方式
+
+`app/globals.css` 采用 shadcn / Tailwind v4 的 token 语法：
+
+- `:root` 只放 fallback token。
+- `@theme inline` 把 `--background / --card / --muted / --border ...` 映射为 `--color-*`，让 `bg-background`、`text-foreground`、`border-border` 这类 class 继续成立。
+- 运行时颜色由 `html.arcory-mode-*` 接管。
+- `D / S / R` 属于浅色家族，`N / M` 属于暗色家族。
+- `S` 和 `R` 的底色故意保持接近 `D`，视觉变化主要交给视频覆盖层，而不是直接换一整块新背景色；这是为了接近 [dany.works](https://dany.works/) 的切换观感。
+
+### 各模式视觉实现
+
+#### D / N
+
+- `D`（day）：浅色纸张感底色，边框和 muted 对比被压低，页面更像一张暖白底的编辑稿。
+- `N`（night）：纯黑偏灰底色，层级主要靠 `secondary / muted / border` 拉开，不依赖重阴影。
+
+#### S（summer）
+
+- 使用真实全屏视频层：`/public/leaves.mp4`。
+- Provider 在页面根节点之外直接渲染 `<video class="arcory-summer-overlay">`。
+- CSS 关键点：
+  - `position: fixed; inset: 0;`
+  - `object-fit: cover;`
+  - `object-position: top;`
+  - `mix-blend-mode: multiply;`
+- 页面主体内容之所以仍然清晰可见，是因为视频不是盖一层不透明贴图，而是通过 `multiply` 与底色相乘，只把叶子和光影压进背景层次里，不直接抹掉线条和文字。
+
+#### R（rain）
+
+- 使用真实全屏视频层：`/public/rain.mp4`。
+- 技术路径与 `S` 基本一致，也是固定定位的视频覆盖层。
+- CSS 关键点：
+  - `mix-blend-mode: multiply;`
+  - `opacity: 0.6;`
+  - `object-fit: cover;`
+- `R` 的底色同样保持在 `D` 家族附近，雨感主要来自视频本身的明暗和 multiply 叠加，而不是把整页改成蓝灰雨天背景。
+
+#### M（midnight）
+
+- 使用真实全屏视频层：`/public/moon.mp4`。
+- 与 `S / R` 不同，`M` 不使用 `mix-blend-mode`，而是直接依赖暗底 + 视频透明度去建立月夜投影感。
+- CSS 关键点：
+  - `opacity: 0.6;`
+  - `object-fit: cover;`
+  - 移动端 `object-position: left;`
+- `M` 属于独立暗色模式，不和 `D` 共用背景基调。
+
+#### C（chaos）
+
+- `C` 不是换主题，而是一个物理化交互模式。
+- Provider 会对当前可见页面做一次“采样拆解”：
+  - block 元素：`button / input / img / video / svg / canvas / [role="button"] / .arcory-chaos-block`
+  - text 元素：按 `Range` 把文本拆到“词”级别
+- 然后把这些 DOM 快照挂到单独的 `arcory-chaos-overlay` 上，并交给 `matter-js` 建立刚体、重力、摩擦和拖拽。
+- 原页面根节点会暂时 `visibility: hidden`，用户看到的是一层可拖拽、可坠落、可回收的碎片化副本。
+- 再次按 `C` 时，会执行一次反向插值动画，把所有碎片平滑归位。
+
+### 为什么内容不会被视频盖掉
+
+这里的关键不是简单的 `z-index`，而是“视频层 + 混合模式 + 页面底色”一起工作：
+
+- 视频层确实在内容上方。
+- 但 `S / R` 使用了 `mix-blend-mode: multiply`。
+- multiply 会保留深色线条结构，同时让亮部尽量融入背景，因此搜索框线条、文字边界、列表结构不会像普通半透明遮罩那样被整块糊住。
+- `M` 因为走的是暗色视频方案，所以不使用 multiply，而是直接靠透明度和构图控制可读性。
+
+### 文件位置
+
+- 模式状态与快捷键：`components/site-mode-provider.tsx`
+- 模式 tokens 与 overlay 样式：`app/globals.css`
+- 默认 HTML 模式落点：`app/layout.tsx`
+- 页面主体容器：`app/page.tsx`
+
 ## Notion 数据接入
 
 项目已内置 Notion 同步能力，支持“新增 / 修改 / 删除（归档）”同步到本地缓存，并自动分类。
