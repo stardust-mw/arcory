@@ -9,10 +9,13 @@ import {
   SITE_MODE_PENDING_SHORTCUT_KEY,
   SITE_MODE_PENDING_SHORTCUT_MAX_AGE_MS,
   SITE_MODE_SHORTCUT_KEYS,
-  SITE_MODE_STORAGE_KEY,
   applySiteMode,
-  getInitialSiteMode,
+  clearManualSiteMode,
+  getActiveManualSiteMode,
+  getTimeBasedSiteMode,
   getModeFromShortcut,
+  resolveAdaptiveSiteMode,
+  saveManualSiteMode,
   type SiteMode,
 } from "@/lib/site-mode";
 
@@ -754,13 +757,22 @@ export function SiteModeProvider({ children }: { children: ReactNode }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const chaosStateRef = useRef<ChaosState | null>(null);
   const chaosLockedRef = useRef(false);
+  const hasManualOverrideRef = useRef(false);
+  const modeRef = useRef<SiteMode>("day");
 
   const setMode = (nextMode: SiteMode) => {
+    hasManualOverrideRef.current = true;
+    modeRef.current = nextMode;
     setModeState(nextMode);
   };
 
   const toggleDayNight = () => {
-    setModeState((current) => (current === "night" || current === "midnight" ? "day" : "night"));
+    hasManualOverrideRef.current = true;
+    setModeState((current) => {
+      const nextMode = current === "night" || current === "midnight" ? "day" : "night";
+      modeRef.current = nextMode;
+      return nextMode;
+    });
   };
 
   const toggleChaos = () => {
@@ -790,16 +802,28 @@ export function SiteModeProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const initialMode = getInitialSiteMode();
+    let isCancelled = false;
     const pendingShortcut = consumePendingShortcut();
+    const manualOverride = getActiveManualSiteMode();
     const root = document.documentElement;
     root.dataset.arcoryHydrated = "true";
 
     const shortcutMode = getModeFromShortcut(pendingShortcut);
-    const nextMode = shortcutMode ?? initialMode;
+    const nextMode = shortcutMode ?? manualOverride ?? getTimeBasedSiteMode();
+    hasManualOverrideRef.current = Boolean(shortcutMode ?? manualOverride);
+    modeRef.current = nextMode;
     setModeState(nextMode);
     applySiteMode(nextMode);
     setIsModeReady(true);
+
+    if (!shortcutMode && !manualOverride) {
+      void resolveAdaptiveSiteMode().then((adaptiveMode) => {
+        if (isCancelled || hasManualOverrideRef.current || modeRef.current === adaptiveMode) return;
+
+        modeRef.current = adaptiveMode;
+        setModeState(adaptiveMode);
+      });
+    }
 
     if (pendingShortcut === "c") {
       window.setTimeout(() => {
@@ -808,14 +832,21 @@ export function SiteModeProvider({ children }: { children: ReactNode }) {
     }
 
     return () => {
+      isCancelled = true;
       delete root.dataset.arcoryHydrated;
     };
   }, []);
 
   useEffect(() => {
     if (!isModeReady) return;
+    modeRef.current = mode;
     applySiteMode(mode);
-    window.localStorage.setItem(SITE_MODE_STORAGE_KEY, mode);
+    if (hasManualOverrideRef.current) {
+      saveManualSiteMode(mode);
+      return;
+    }
+
+    clearManualSiteMode();
   }, [isModeReady, mode]);
 
   const handleShortcut = useEffectEvent((event: KeyboardEvent) => {
