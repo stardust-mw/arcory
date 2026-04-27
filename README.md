@@ -121,15 +121,28 @@ pnpm screenshots:promote
 1. 服务端先输出 `html.arcory-mode-day`，保证首屏 HTML 有默认模式类，不会出现“完全无 token”的白屏状态。
 2. `app/layout.tsx` 在 hydration 前注入一段很小的快捷键缓冲脚本。
 3. 如果用户在页面尚未 hydration 时按下 `d / s / n / m / r / c`，脚本会把按键和时间戳写入 `sessionStorage("arcory-pending-shortcut")`。
-4. `SiteModeProvider` 挂载后先读取 `localStorage("arcory-site-mode")`，没有历史值时再回退到 `prefers-color-scheme`。
-5. Provider 再消费那段 pending shortcut。如果是 `d / s / n / m / r`，直接覆盖初始模式；如果是 `c`，会在页面准备好后补触发一次 chaos。
-6. 每次模式切换都会统一调用 `applySiteMode()`，同步更新：
+4. `SiteModeProvider` 挂载后先读“当天是否仍有效的手动覆盖”。这个值保存在 `localStorage("arcory-site-mode")`，结构是 `{ mode, expiresAt }`。
+5. 如果存在有效的 pending shortcut 或当天手动覆盖，就直接使用这个模式，不再跑自动天气判断；如果两者都没有，就先按当前时间给一个基线模式：白天 `D`、傍晚/清晨 `N`、深夜 `M`。
+6. 在没有手动覆盖时，Provider 会异步尝试通过浏览器定位 + `open-meteo` 获取当前天气，再把时间基线修正成更合适的模式，例如晴热白天进入 `S`，下雨白天进入 `R`。
+7. 如果是 `c`，会在页面准备好后补触发一次 chaos。
+8. 每次模式切换都会统一调用 `applySiteMode()`，同步更新：
    - `<html>` 上的 `arcory-mode-day / night / summer / midnight / rain`
    - `data-site-mode`
    - `.dark` 这个选择器钩子
-7. 之后全站的颜色、边框、hover、视频显示都由 CSS token 和 overlay 状态共同决定。
+9. 之后全站的颜色、边框、hover、视频显示都由 CSS token 和 overlay 状态共同决定。
 
-### 3. 为什么要同时保留 `html.arcory-mode-*` 和 `.dark`
+### 3. 默认进入与再次打开的规则
+
+当前模式系统不是显式的 `Auto` 模式，而是“系统默认自动，手动覆盖当天有效”：
+
+- 第一次打开，没有手动记录时：先按时间进入 `D / N / M`，再由天气把结果修正到 `S / R / N / M / D` 中更合适的一个。
+- 用户手动按下 `D / S / R / N / M` 后：该选择会被记为“当天内有效的手动覆盖”。
+- 当天再次关闭重开：优先使用这个手动覆盖。
+- 第二天再打开：昨天的手动覆盖自动失效，系统重新按时间 + 天气判断。
+
+这样做的目的是保留作品站的“环境感”，同时又允许用户在当天把页面固定在自己想要的模式上。
+
+### 4. 为什么要同时保留 `html.arcory-mode-*` 和 `.dark`
 
 两者职责不同：
 
@@ -142,7 +155,7 @@ pnpm screenshots:promote
 - `html.arcory-mode-*` 接管实际颜色
 - `.dark` 仅负责兼容已有的 `dark:*` 写法
 
-### 4. 视频氛围层的实现方式
+### 5. 视频氛围层的实现方式
 
 视频层不是单纯的“背景视频”，而是一层固定定位的 atmosphere overlay：
 
@@ -162,7 +175,7 @@ pnpm screenshots:promote
 - 视频源
 - overlay class
 
-### 5. 为什么 S / R 用 `multiply`，M 不用
+### 6. 为什么 S / R 用 `multiply`，M 不用
 
 `S` 和 `R` 都属于浅底模式，页面底色和文字结构本身比较轻，所以视频需要压进背景里，而不是盖在内容上。
 
@@ -186,7 +199,7 @@ pnpm screenshots:promote
 
 当前实现里，`midnight` overlay 透明度是 `0.4`。
 
-### 6. 各模式当前分工
+### 7. 各模式当前分工
 
 - `D`：默认白天基准模式，负责作为浅色设计母版
 - `N`：默认夜间基准模式，负责作为暗色设计母版
@@ -195,7 +208,7 @@ pnpm screenshots:promote
 - `M`：沿用暗色家族，用 `moon.mp4` 叠加月夜氛围，不走 `multiply`
 - `C`：不是 token 主题，而是对当前页面做一次瞬时物理打散
 
-### 7. Chaos 模式的实现边界
+### 8. Chaos 模式的实现边界
 
 `C` 模式现在仍放在 `SiteModeProvider` 中，没有继续抽离，是有意的：
 
@@ -213,22 +226,22 @@ pnpm screenshots:promote
 
 所以它更像“页面交互引擎”，而不是一个纯主题组件。后续如果换项目，建议先复用 `D / S / N / M / R`，再按页面结构重新适配 `C`。
 
-### 8. 现在已经适合抽成组件 / 配置的部分
+### 9. 现在已经适合抽成组件 / 配置的部分
 
 已经拆出的可迁移单元：
 
 - `lib/site-mode.ts`
   - 适合直接带走
-  - 包含模式类型、快捷键、运行时类名、dark family 判断、视频配置
+  - 包含模式类型、快捷键、运行时类名、dark family 判断、视频配置、时间/天气解析、当天有效的手动覆盖策略
 - `components/site-mode-atmosphere.tsx`
   - 适合直接带走
   - 只要项目里也采用“固定 overlay 视频”的方案，就能复用
 - `components/site-mode-provider.tsx`
   - 适合“半复用”
-  - 模式 state、快捷键、pending shortcut 恢复逻辑可以直接用
+  - 模式 state、快捷键、pending shortcut 恢复逻辑、自动模式初始化链路可以直接用
   - chaos 采样部分通常要按新页面结构调整
 
-### 9. 迁移到新项目的最小步骤
+### 10. 迁移到新项目的最小步骤
 
 如果以后把这套方案搬到别的项目，建议按下面顺序：
 
@@ -249,12 +262,13 @@ pnpm screenshots:promote
    - `mix-blend-mode`
    - 哪些元素应处于视频之上或之下
 
-### 10. 迁移时最容易踩的坑
+### 11. 迁移时最容易踩的坑
 
 - 只复制 `.dark`，不复制 `html.arcory-mode-*`，会导致 mode 切了但 token 没变。
 - 把视频直接塞进页面流里，而不是 fixed overlay，会让布局和滚动一起乱掉。
 - 忘记在模式切走时 `pause()` + `currentTime = 0`，会导致回切时出现跳帧或沿用旧帧。
 - 在暗底模式里盲目使用 `multiply`，容易把文字对比打没。
+- 如果要保留“系统默认自动，手动当天有效”的体验，不能只存一个纯字符串模式值，最好同时存过期时间。
 - 新项目如果没有和当前页面相同的 DOM 标记类，chaos 逻辑不能直接照搬。
 
 ## Notion 数据接入
