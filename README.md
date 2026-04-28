@@ -56,7 +56,7 @@ pnpm screenshots:promote
 | `components/site-mode-provider.tsx` | 模式状态、快捷键、chaos 模式、模式上下文 |
 | `components/site-mode-atmosphere.tsx` | 视频氛围层组件，负责播放、ready 状态与重置 |
 | `lib/site-mode.ts` | 模式类型、快捷键映射、运行时类名、视频配置 |
-| `lib/notion-sync.ts` | Notion 拉取、缓存、备份、分类、去重 |
+| `lib/notion-sync.ts` | Notion 拉取、缓存、备份、分类与同步整理 |
 | `app/api/sites/route.ts` | 前端站点数据接口 |
 | `app/api/notion/*` | 同步、截图代理、分类锁定相关接口 |
 | `public/*.mp4` | 模式视频素材 |
@@ -334,12 +334,12 @@ ARCORY_DATA_DIR=/tmp/arcory-data
 
 ### 数据处理规则
 
-#### 标题与去重
+#### 标题与保留机制
 
 - 优先使用 Notion 自身的 `title`
 - 标题缺失时，可回退网页标题或域名推断
-- 同步阶段按规范化 URL 去重
-- 冲突时优先保留编辑时间更晚、信息更完整的记录
+- 当前前端展示数据以 Notion 原始库为准，不主动按 URL 折叠同站点条目
+- 同步链路会尽量保留原始记录数量，方便直接以 Notion 作为唯一维护源
 
 #### 分类与子分类
 
