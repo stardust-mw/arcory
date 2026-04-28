@@ -121,7 +121,7 @@ type NotionBackupFile = {
 };
 
 type LockedClassification = {
-  category: SiteCategory;
+  category: string;
   subcategory: string;
   lockedAt: string;
 };
@@ -368,6 +368,10 @@ function normalizeCategory(value?: string | null): SiteCategory | null {
   return categorySet.has(candidate as SiteCategory) ? (candidate as SiteCategory) : null;
 }
 
+function normalizeTaxonomyValue(value?: string | null) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function normalizeCachedSites(sites: unknown): CachedNotionSite[] {
   if (!Array.isArray(sites)) return [];
 
@@ -375,8 +379,8 @@ function normalizeCachedSites(sites: unknown): CachedNotionSite[] {
   for (const entry of sites) {
     if (!entry || typeof entry !== "object") continue;
     const site = entry as CachedNotionSite;
-    const category = normalizeCategory(site.category) ?? "RESOURCES";
-    const subcategory = normalizeSubcategoryForCategory(category, site.subcategory);
+    const category = normalizeTaxonomyValue(site.category) || normalizeCategory(site.category) || "RESOURCES";
+    const subcategory = normalizeTaxonomyValue(site.subcategory);
     normalized.push({
       ...site,
       category,
@@ -384,7 +388,7 @@ function normalizeCachedSites(sites: unknown): CachedNotionSite[] {
     });
   }
 
-  return dedupeCachedSitesByIdentity(normalized);
+  return normalized;
 }
 
 function richTextToString(richText?: NotionRichText[]) {
@@ -1124,7 +1128,7 @@ function inferSubcategoryByModel(site: NormalizedNotionSite, category: SiteCateg
   return getFallbackSubcategory(site);
 }
 
-function inferMeta(site: NormalizedNotionSite, category: SiteCategory) {
+function inferMeta(site: NormalizedNotionSite, category: string) {
   if (site.tags.length > 0) {
     return site.tags
       .slice(0, 2)
@@ -1214,13 +1218,13 @@ function applyClassificationStrategy(
   nowIso: string,
   pendingLockUpdates: Record<string, LockedClassification>,
 ) {
-  const manualCategory = normalizeCategory(site.manualCategory);
-  const manualSubcategory = normalizeManualSubcategory(site.manualSubcategory);
+  const manualCategory = normalizeTaxonomyValue(site.manualCategory);
+  const manualSubcategory = normalizeTaxonomyValue(site.manualSubcategory);
   const urlKey = buildUrlDedupKey(site.url);
 
   if (manualCategory || manualSubcategory) {
-    const category = manualCategory ?? autoCategory;
-    const subcategory = normalizeSubcategoryForCategory(category, manualSubcategory || autoSubcategory);
+    const category = manualCategory || autoCategory;
+    const subcategory = manualSubcategory || autoSubcategory;
 
     if (lockFile.locked) {
       pendingLockUpdates[urlKey] = {
@@ -1236,10 +1240,11 @@ function applyClassificationStrategy(
   if (lockFile.locked) {
     const locked = lockFile.items[urlKey];
     if (locked) {
-      const category = normalizeCategory(locked.category) ?? autoCategory;
+      const category = normalizeTaxonomyValue(locked.category) || autoCategory;
+      const subcategory = normalizeTaxonomyValue(locked.subcategory) || autoSubcategory;
       return {
         category,
-        subcategory: normalizeSubcategoryForCategory(category, locked.subcategory),
+        subcategory,
       };
     }
 
@@ -1364,13 +1369,11 @@ async function readClassificationLockFile(): Promise<ClassificationLockFile> {
     const safeItems: Record<string, LockedClassification> = {};
     for (const [urlKey, value] of Object.entries(parsed.items)) {
       if (!value || typeof value !== "object") continue;
-      const category = normalizeCategory((value as LockedClassification).category);
-      const subcategory = category
-        ? normalizeSubcategoryForCategory(category, (value as LockedClassification).subcategory)
-        : "";
+      const category = normalizeTaxonomyValue((value as LockedClassification).category);
+      const subcategory = normalizeTaxonomyValue((value as LockedClassification).subcategory);
       const lockedAt =
         typeof (value as LockedClassification).lockedAt === "string" ? (value as LockedClassification).lockedAt : "";
-      if (!category || !subcategory || !lockedAt) continue;
+      if (!category || !lockedAt) continue;
       safeItems[urlKey] = {
         category,
         subcategory,
@@ -1395,8 +1398,8 @@ async function writeClassificationLockFile(lockFile: ClassificationLockFile) {
 
 function mapCachedSitesToClientSites(sites: CachedNotionSite[]) {
   return sites.map((site) => ({
-    category: normalizeCategory(site.category) ?? "RESOURCES",
-    subcategory: normalizeSubcategoryForCategory(normalizeCategory(site.category) ?? "RESOURCES", site.subcategory),
+    category: normalizeTaxonomyValue(site.category) || "RESOURCES",
+    subcategory: normalizeTaxonomyValue(site.subcategory),
     id: site.id,
     title: site.title,
     meta: site.meta,
@@ -1409,43 +1412,33 @@ function mapCachedSitesToClientSites(sites: CachedNotionSite[]) {
 }
 
 function buildClassificationSummary(sites: CachedNotionSite[]) {
-  const byCategory = Object.fromEntries(
-    siteCategories.map((category) => [
-      category,
-      {
-        count: 0,
-        subcategoryCounts: new Map<string, number>(),
-      },
-    ]),
-  ) as Record<
-    SiteCategory,
-    {
-      count: number;
-      subcategoryCounts: Map<string, number>;
-    }
-  >;
+  const byCategory = new Map<string, { count: number; subcategoryCounts: Map<string, number> }>();
 
   for (const site of sites) {
-    const category = normalizeCategory(site.category) ?? "RESOURCES";
-    const bucket = byCategory[category];
-    bucket.count += 1;
+    const category = normalizeTaxonomyValue(site.category) || "RESOURCES";
+    const subcategory = normalizeTaxonomyValue(site.subcategory);
+    const bucket = byCategory.get(category) ?? {
+      count: 0,
+      subcategoryCounts: new Map<string, number>(),
+    };
 
-    const normalizedSubcategory = normalizeSubcategoryForCategory(category, site.subcategory);
-    bucket.subcategoryCounts.set(normalizedSubcategory, (bucket.subcategoryCounts.get(normalizedSubcategory) ?? 0) + 1);
+    bucket.count += 1;
+    if (subcategory) {
+      bucket.subcategoryCounts.set(subcategory, (bucket.subcategoryCounts.get(subcategory) ?? 0) + 1);
+    }
+
+    byCategory.set(category, bucket);
   }
 
-  return siteCategories.map((category) => {
-    const bucket = byCategory[category];
-    const subcategories = Array.from(bucket.subcategoryCounts.entries())
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "en"))
-      .map(([name, count]) => ({ name, count }));
-
-    return {
+  return Array.from(byCategory.entries())
+    .sort((a, b) => a[0].localeCompare(b[0], "en"))
+    .map(([category, bucket]) => ({
       category,
       count: bucket.count,
-      subcategories,
-    };
-  });
+      subcategories: Array.from(bucket.subcategoryCounts.entries())
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "en"))
+        .map(([name, count]) => ({ name, count })),
+    }));
 }
 
 async function getFallbackSitesFromBackupOrCache() {
@@ -1951,7 +1944,7 @@ export async function syncNotionSites(options: SyncNotionOptions = false) {
 
   const notionPages = await queryNotionDatabaseAll();
   const normalized = notionPages.map(extractSiteFromPage).filter((site): site is NormalizedNotionSite => Boolean(site));
-  const currentActive = dedupeSitesByUrl(normalized.filter((site) => !site.archived));
+  const currentActive = normalized.filter((site) => !site.archived);
   const lockFile = await readClassificationLockFile();
   const pendingLockUpdates: Record<string, LockedClassification> = { ...lockFile.items };
 
@@ -2030,12 +2023,11 @@ export async function syncNotionSites(options: SyncNotionOptions = false) {
     nextSites.push(nextSite);
   }
 
-  const dedupedNextSites = dedupeCachedSitesByIdentity(nextSites);
-  dedupedNextSites.sort((a, b) => b.clicks - a.clicks || a.title.localeCompare(b.title));
+  nextSites.sort((a, b) => b.clicks - a.clicks || a.title.localeCompare(b.title));
 
   let screenshotWriteback: { updated: number; skipped: number; reason: string } | null = null;
   if (writeScreenshots) {
-    screenshotWriteback = await writeScreenshotsBackToNotion(dedupedNextSites, {
+    screenshotWriteback = await writeScreenshotsBackToNotion(nextSites, {
       refreshExisting: refreshScreenshots,
       limit: screenshotLimit,
       sourceMode: screenshotSource,
@@ -2044,7 +2036,7 @@ export async function syncNotionSites(options: SyncNotionOptions = false) {
 
   const nextCache: NotionCacheFile = {
     syncedAt: nowIso,
-    sites: dedupedNextSites,
+    sites: nextSites,
   };
 
   if (lockFile.locked) {
@@ -2080,10 +2072,10 @@ export async function syncNotionSites(options: SyncNotionOptions = false) {
     reason: "synced" as const,
     cache: nextCache,
     stats: {
-      total: dedupedNextSites.length,
+      total: nextSites.length,
       created,
       updated,
-      removed: Math.max(oldById.size - dedupedNextSites.length, 0),
+      removed: Math.max(oldById.size - nextSites.length, 0),
     },
     screenshotWriteback,
   };
@@ -2111,10 +2103,10 @@ export async function confirmClassificationLockFromCache() {
   const items: Record<string, LockedClassification> = {};
   for (const site of cache.sites) {
     if (!site.url) continue;
-    const category = normalizeCategory(site.category) ?? "RESOURCES";
+    const category = normalizeTaxonomyValue(site.category) || "RESOURCES";
     items[buildUrlDedupKey(site.url)] = {
       category,
-      subcategory: normalizeSubcategoryForCategory(category, site.subcategory),
+      subcategory: normalizeTaxonomyValue(site.subcategory),
       lockedAt: nowIso,
     };
   }
@@ -2150,6 +2142,25 @@ export async function unlockClassificationLock() {
 export async function getSitesForClient() {
   if (process.env.NODE_ENV === "development") {
     const devCache = await readCacheFile();
+    const isStale =
+      !devCache.syncedAt || Date.now() - new Date(devCache.syncedAt).getTime() > AUTO_SYNC_INTERVAL_MS;
+
+    if (isStale && hasNotionConfig()) {
+      try {
+        const syncResult = await syncNotionSites(false);
+        const sites = mapCachedSitesToClientSites(syncResult.cache.sites);
+        if (sites.length > 0) {
+          return {
+            sites,
+            source: "notion" as const,
+            syncedAt: syncResult.cache.syncedAt,
+          };
+        }
+      } catch {
+        // Fall back to the last local cache in development.
+      }
+    }
+
     const devSites = mapCachedSitesToClientSites(devCache.sites);
     if (devSites.length > 0) {
       return {

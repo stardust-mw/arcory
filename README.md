@@ -43,6 +43,8 @@ pnpm screenshots:promote
 - 结构：左侧品牌区 / 中间站点列表 / 右侧 hover 预览
 - 文件：`app/page.tsx`
 - 特征：窄中栏列表、固定预览区、模式切换、搜索、分类筛选
+- 交互：网站列表支持 hover / keyboard focus 两套互斥预览状态，方向键只在鼠标进入列表区域后生效
+- 刷新恢复：当前主分类、子分类和展开状态会保留，刷新后尽量回到原筛选上下文
 
 ## 目录与职责
 
@@ -123,7 +125,7 @@ pnpm screenshots:promote
 3. 如果用户在页面尚未 hydration 时按下 `d / s / n / m / r / c`，脚本会把按键和时间戳写入 `sessionStorage("arcory-pending-shortcut")`。
 4. `SiteModeProvider` 挂载后先读“当天是否仍有效的手动覆盖”。这个值保存在 `localStorage("arcory-site-mode")`，结构是 `{ mode, expiresAt }`。
 5. 如果存在有效的 pending shortcut 或当天手动覆盖，就直接使用这个模式，不再跑自动天气判断；如果两者都没有，就先按当前时间给一个基线模式：白天 `D`、傍晚/清晨 `N`、深夜 `M`。
-6. 在没有手动覆盖时，Provider 会异步尝试通过浏览器定位 + `open-meteo` 获取当前天气，再把时间基线修正成更合适的模式，例如晴热白天进入 `S`，下雨白天进入 `R`。
+6. 在没有手动覆盖时，Provider 会先检查浏览器地理位置权限；只有权限已经是 `granted` 时，才静默读取定位并通过 `open-meteo` 获取当前天气，再把时间基线修正成更合适的模式，例如晴热白天进入 `S`，下雨白天进入 `R`。
 7. 如果是 `c`，会在页面准备好后补触发一次 chaos。
 8. 每次模式切换都会统一调用 `applySiteMode()`，同步更新：
    - `<html>` 上的 `arcory-mode-day / night / summer / midnight / rain`
@@ -141,6 +143,8 @@ pnpm screenshots:promote
 - 第二天再打开：昨天的手动覆盖自动失效，系统重新按时间 + 天气判断。
 
 这样做的目的是保留作品站的“环境感”，同时又允许用户在当天把页面固定在自己想要的模式上。
+
+补充一点：当前实现不会为了自动模式主动弹出浏览器位置授权框；如果用户从未授予过地理位置权限，系统会直接回退到时间基线模式。
 
 ### 4. 为什么要同时保留 `html.arcory-mode-*` 和 `.dark`
 
@@ -208,7 +212,16 @@ pnpm screenshots:promote
 - `M`：沿用暗色家族，用 `moon.mp4` 叠加月夜氛围，不走 `multiply`
 - `C`：不是 token 主题，而是对当前页面做一次瞬时物理打散
 
-### 8. Chaos 模式的实现边界
+### 8. 列表交互与筛选恢复
+
+当前首页列表除了普通 hover，还补了一套更明确的键盘 focus 交互：
+
+- 鼠标进入网站列表区域后，`↑ / ↓ / ← / →` 才会接管当前网站项切换。
+- keyboard focus 和 mouse hover 是互斥的：键盘接管时，右侧 preview 只响应当前 focus；鼠标重新移动到列表项上时，会取消上一条 focus 状态并切回 hover 预览。
+- focus 行会补一层更轻的背景、细边框，并覆盖自身上下分割线，让“当前项”比普通 hover 更稳定。
+- 当前 `activeCategory / activeSubcategory / expandedCategories` 会写入 `sessionStorage`，刷新后优先恢复；恢复后的合法性校验会等待首轮站点数据稳定后再进行，避免子分类被过早清掉。
+
+### 9. Chaos 模式的实现边界
 
 `C` 模式现在仍放在 `SiteModeProvider` 中，没有继续抽离，是有意的：
 
@@ -226,7 +239,7 @@ pnpm screenshots:promote
 
 所以它更像“页面交互引擎”，而不是一个纯主题组件。后续如果换项目，建议先复用 `D / S / N / M / R`，再按页面结构重新适配 `C`。
 
-### 9. 现在已经适合抽成组件 / 配置的部分
+### 10. 现在已经适合抽成组件 / 配置的部分
 
 已经拆出的可迁移单元：
 
@@ -241,7 +254,7 @@ pnpm screenshots:promote
   - 模式 state、快捷键、pending shortcut 恢复逻辑、自动模式初始化链路可以直接用
   - chaos 采样部分通常要按新页面结构调整
 
-### 10. 迁移到新项目的最小步骤
+### 11. 迁移到新项目的最小步骤
 
 如果以后把这套方案搬到别的项目，建议按下面顺序：
 
@@ -262,7 +275,7 @@ pnpm screenshots:promote
    - `mix-blend-mode`
    - 哪些元素应处于视频之上或之下
 
-### 11. 迁移时最容易踩的坑
+### 12. 迁移时最容易踩的坑
 
 - 只复制 `.dark`，不复制 `html.arcory-mode-*`，会导致 mode 切了但 token 没变。
 - 把视频直接塞进页面流里，而不是 fixed overlay，会让布局和滚动一起乱掉。

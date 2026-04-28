@@ -16,7 +16,7 @@ export type SavedSite = {
   title: string;
   meta: string;
   clicks: number;
-  category: SiteCategory;
+  category: string;
   subcategory?: string;
   url?: string;
   screenshot?: string;

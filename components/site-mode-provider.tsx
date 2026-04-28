@@ -211,8 +211,14 @@ function createOverlayItem(candidate: ChaosCandidate) {
   } else {
     const clone = candidate.content.cloneNode(true) as HTMLElement;
     const position = window.getComputedStyle(candidate.content).position;
-    if (position === "fixed" || position === "sticky") {
+    if (position === "fixed" || position === "sticky" || position === "absolute") {
       clone.style.position = "static";
+      clone.style.inset = "auto";
+      clone.style.left = "0";
+      clone.style.top = "0";
+      clone.style.right = "auto";
+      clone.style.bottom = "auto";
+      clone.style.transform = "none";
     }
     clone.style.width = `${width}px`;
     clone.style.height = `${height}px`;
@@ -334,6 +340,14 @@ function collectDesktopChaos(root: HTMLElement) {
 
   const toolbar = root.querySelector<HTMLElement>(".arcory-chaos-toolbar");
   toolbar?.querySelectorAll<HTMLElement>("button, input").forEach((element) => addBlock(element));
+
+  const treeNav = root.querySelector<HTMLElement>(".arcory-tree-nav");
+  if (treeNav) {
+    treeNav.querySelectorAll<HTMLElement>(".arcory-tree-connector").forEach((element) => addBlock(element));
+    treeNav
+      .querySelectorAll<HTMLElement>(".arcory-tree-root, .arcory-tree-node")
+      .forEach((element) => splitContainer(element));
+  }
 
   const siteRows = Array.from(root.querySelectorAll<HTMLElement>(".arcory-site-row"));
   if (siteRows.length === 0) {
