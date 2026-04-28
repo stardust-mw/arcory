@@ -186,9 +186,27 @@ export function getAdaptiveSiteModeFromSignal(signal: SiteModeWeatherSignal, dat
   return "day";
 }
 
-function getCurrentPosition() {
+async function canReadGeolocationSilently() {
+  if (typeof window === "undefined" || !("permissions" in navigator)) {
+    return false;
+  }
+
+  try {
+    const status = await navigator.permissions.query({ name: "geolocation" });
+    return status.state === "granted";
+  } catch {
+    return false;
+  }
+}
+
+async function getCurrentPosition() {
   if (typeof window === "undefined" || !("geolocation" in navigator)) {
-    return Promise.resolve<GeolocationPosition | null>(null);
+    return null;
+  }
+
+  const canReadSilently = await canReadGeolocationSilently();
+  if (!canReadSilently) {
+    return null;
   }
 
   return new Promise<GeolocationPosition | null>((resolve) => {

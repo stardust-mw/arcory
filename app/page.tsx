@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type FocusEvent as ReactFocusEvent } from "react";
 import { IdenticonAvatar } from "@/components/identicon-avatar";
 import { ListEmptyState } from "@/components/list-empty-state";
 import { Input } from "@/components/ui/input";
-import { categories, siteCategories, type Category, type SavedSite, type SiteCategory } from "@/lib/site-types";
+import { type SavedSite } from "@/lib/site-types";
 import { cn } from "@/lib/utils";
 
 type SitesApiResponse = {
@@ -29,15 +27,26 @@ type HoverPreviewItem = {
   screenshotUrl?: string;
 };
 
+type CategoryTreeBranch = {
+  category: string;
+  subcategories: string[];
+};
+
+type SitePreviewInteractionMode = "hover" | "focus";
+
 const screenshotStatusCache = new Map<string, "ready">();
 const faviconStatusCache = new Map<string, "ready" | "error">();
 const INITIAL_SITES_LIMIT = 24;
 const BACKGROUND_SITES_LIMIT = 48;
-const SITES_CACHE_KEY = "arcory-sites-cache-v1";
-const LIST_BOOT_DELAY_MS = 240;
-const LIST_REVEAL_DELAY_MS = 520;
+const SITES_CACHE_KEY = "arcory-sites-cache-v3";
+const CATEGORY_FILTER_STATE_KEY = "arcory-category-filter-state-v1";
 const PREVIEW_PRELOAD_COUNT = 12;
 const PREVIEW_PRELOAD_DELAY_MS = 180;
+const CATEGORY_NAV_ORDER = ["Design", "Visual", "AI", "Product", "Dev", "Knowledge"] as const;
+const INTERACTIVE_SURFACE_CLASS = "arcory-interactive-surface";
+const TREE_REVEAL_STEP_MS = 18;
+const SITE_REVEAL_STEP_MS = 14;
+const REVEAL_MAX_DELAY_MS = 180;
 
 function normalizeSiteUrl(value?: string) {
   if (!value) return "";
@@ -63,6 +72,89 @@ function getSiteHost(value?: string) {
   }
 }
 
+function getSiteCategory(site: SavedSite) {
+  return typeof site.category === "string" ? site.category.trim() : "";
+}
+
+function getSiteSubcategory(site: SavedSite) {
+  return typeof site.subcategory === "string" ? site.subcategory.trim() : "";
+}
+
+function sortCategoryBranch(a: string, b: string) {
+  const leftIndex = CATEGORY_NAV_ORDER.indexOf(a as (typeof CATEGORY_NAV_ORDER)[number]);
+  const rightIndex = CATEGORY_NAV_ORDER.indexOf(b as (typeof CATEGORY_NAV_ORDER)[number]);
+
+  if (leftIndex >= 0 && rightIndex >= 0) return leftIndex - rightIndex;
+  if (leftIndex >= 0) return -1;
+  if (rightIndex >= 0) return 1;
+  return a.localeCompare(b, "en");
+}
+
+function getRevealStyle(delayMs: number) {
+  return {
+    animationDelay: `${Math.min(delayMs, REVEAL_MAX_DELAY_MS)}ms`,
+  };
+}
+
+function buildCategoryTree(sites: SavedSite[]) {
+  const grouped = new Map<string, Set<string>>();
+
+  for (const site of sites) {
+    const category = getSiteCategory(site);
+    const subcategory = getSiteSubcategory(site);
+    if (!category) continue;
+
+    if (!grouped.has(category)) {
+      grouped.set(category, new Set<string>());
+    }
+
+    if (subcategory) {
+      grouped.get(category)?.add(subcategory);
+    }
+  }
+
+  return Array.from(grouped.entries())
+    .sort((a, b) => sortCategoryBranch(a[0], b[0]))
+    .map(([category, subcategories]) => ({
+      category,
+      subcategories: Array.from(subcategories).sort((left, right) => left.localeCompare(right, "en")),
+    } satisfies CategoryTreeBranch));
+}
+
+function TreeCategoryPrefix({ isLast }: { isLast: boolean }) {
+  return (
+    <span aria-hidden className="arcory-tree-prefix relative block h-6 w-6 shrink-0">
+      <span
+        className={cn(
+          "arcory-tree-connector absolute left-2 border-l border-divider-strong",
+          isLast ? "top-1 h-[calc(50%-0.25rem)]" : "top-1 bottom-1",
+        )}
+      />
+      <span className="arcory-tree-connector absolute left-2 top-1/2 w-3 -translate-y-1/2 border-t border-divider-strong" />
+    </span>
+  );
+}
+
+function TreeSubcategoryPrefix({
+  isCategoryLast,
+  isLast,
+}: {
+  isCategoryLast: boolean;
+  isLast: boolean;
+}) {
+  return (
+    <span aria-hidden className="arcory-tree-prefix relative block h-6 w-11 shrink-0">
+      {!isCategoryLast ? <span className="arcory-tree-connector absolute left-2 top-1 bottom-1 border-l border-divider-strong" /> : null}
+      <span
+        className={cn(
+          "arcory-tree-connector absolute left-7 border-l border-divider-strong",
+          isLast ? "top-1 h-[calc(50%-0.25rem)]" : "top-1 bottom-1",
+        )}
+      />
+      <span className="arcory-tree-connector absolute left-7 top-1/2 w-3 -translate-y-1/2 border-t border-divider-strong" />
+    </span>
+  );
+}
 function buildFaviconCandidates(host: string) {
   if (!host) return [];
 
@@ -240,17 +332,15 @@ function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; classN
 }
 
 function IdlePreviewPanel({
-  category,
   keyword,
   total,
   className,
 }: {
-  category: Category;
   keyword: string;
   total: number;
   className?: string;
 }) {
-  const label = keyword.trim() ? `Search: ${keyword.trim()}` : category === "ALL" ? "All sites" : category;
+  const label = keyword.trim() ? `Search: ${keyword.trim()}` : "All sites";
 
   return (
     <aside className={cn("overflow-hidden rounded-none border border-border bg-card", className)}>
@@ -265,11 +355,154 @@ function IdlePreviewPanel({
             The right column is reserved for the active preview so the middle list can stay dense and readable.
           </p>
         </div>
-        <div className="border-t border-border/80 pt-4 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="border-t border-divider pt-4 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
           {total} entries ready
         </div>
       </div>
     </aside>
+  );
+}
+
+function LoadingCategoryTreeNav() {
+  const skeletonBranches = [
+    { categoryWidth: 60, subcategoryWidths: [84, 74, 92] },
+    { categoryWidth: 54, subcategoryWidths: [78, 70] },
+    { categoryWidth: 38, subcategoryWidths: [72, 86, 68, 80] },
+    { categoryWidth: 72, subcategoryWidths: [64, 88] },
+    { categoryWidth: 34, subcategoryWidths: [] },
+    { categoryWidth: 86, subcategoryWidths: [] },
+  ];
+
+  return (
+    <div className="space-y-1 font-mono text-[14px] leading-6 text-foreground">
+      <div className="px-1 text-lg leading-none">Arcory</div>
+      <div className="mt-3 space-y-0.5">
+        {skeletonBranches.map((branch, branchIndex) => {
+          const isLastCategory = branchIndex === skeletonBranches.length - 1;
+
+          return (
+            <div className="px-1" key={"loading-tree-row-" + branchIndex}>
+              <div className="flex items-center">
+                <TreeCategoryPrefix isLast={isLastCategory} />
+                <div
+                  className="h-3 animate-pulse rounded-none bg-muted/65"
+                  style={{ width: branch.categoryWidth }}
+                />
+              </div>
+
+              {branch.subcategoryWidths.map((width, subcategoryIndex) => {
+                const isLastSubcategory = subcategoryIndex === branch.subcategoryWidths.length - 1;
+
+                return (
+                  <div className="flex items-center" key={"loading-tree-row-" + branchIndex + "-sub-" + subcategoryIndex}>
+                    <TreeSubcategoryPrefix isCategoryLast={isLastCategory} isLast={isLastSubcategory} />
+                    <div
+                      className="h-3 animate-pulse rounded-none bg-muted/50"
+                      style={{ width }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CategoryTreeNav({
+  activeCategory,
+  activeSubcategory,
+  branches,
+  expandedCategories,
+  onCategorySelect,
+  onRootSelect,
+  onSubcategorySelect,
+}: {
+  activeCategory: string | null;
+  activeSubcategory: string | null;
+  branches: CategoryTreeBranch[];
+  expandedCategories: string[];
+  onCategorySelect: (category: string) => void;
+  onRootSelect: () => void;
+  onSubcategorySelect: (category: string, subcategory: string) => void;
+}) {
+  return (
+    <nav className="arcory-tree-nav font-mono text-[14px] leading-6 text-foreground">
+      <button
+        className="arcory-tree-root flex w-full cursor-pointer items-center rounded-none px-1 text-left text-lg leading-none transition-colors"
+        onClick={onRootSelect}
+        type="button"
+      >
+        <span className="arcory-tree-label">Arcory</span>
+      </button>
+
+      <div className="mt-3 space-y-0.5">
+        {branches.map((branch, branchIndex) => {
+          const isLastCategory = branchIndex === branches.length - 1;
+          const branchActive = activeCategory === branch.category;
+          const categoryDirectActive = branchActive && !activeSubcategory;
+          const branchExpanded = expandedCategories.includes(branch.category);
+
+          return (
+            <div
+              className="arcory-reveal-item"
+              key={branch.category}
+              style={getRevealStyle(branchIndex * TREE_REVEAL_STEP_MS)}
+            >
+              <button
+                className={cn(
+                  "arcory-tree-node group flex w-full cursor-pointer items-center rounded-none px-1 text-left transition-colors",
+                  INTERACTIVE_SURFACE_CLASS,
+                )}
+                data-active={categoryDirectActive ? "true" : undefined}
+                onClick={() => onCategorySelect(branch.category)}
+                type="button"
+              >
+                <TreeCategoryPrefix isLast={isLastCategory} />
+                <span className="arcory-tree-label min-w-0 truncate">{branch.category}</span>
+              </button>
+
+              {branchExpanded
+                ? branch.subcategories.map((subcategory, subcategoryIndex) => {
+                    const isLastSubcategory = subcategoryIndex === branch.subcategories.length - 1;
+                    const subcategoryActive = branchActive && activeSubcategory === subcategory;
+
+                    return (
+                      <div
+                        className="arcory-reveal-item"
+                        key={branch.category + "-" + subcategory}
+                        style={getRevealStyle(branchIndex * TREE_REVEAL_STEP_MS + (subcategoryIndex + 1) * 12)}
+                      >
+                        <button
+                        className={cn(
+                          "arcory-tree-node group flex w-full cursor-pointer items-center rounded-none px-1 text-left transition-colors",
+                          INTERACTIVE_SURFACE_CLASS,
+                        )}
+                        data-active={subcategoryActive ? "true" : undefined}
+                        onClick={() => onSubcategorySelect(branch.category, subcategory)}
+                        type="button"
+                      >
+                        <TreeSubcategoryPrefix isCategoryLast={isLastCategory} isLast={isLastSubcategory} />
+                        <span
+                          className={cn(
+                            "arcory-tree-label min-w-0 truncate text-muted-foreground transition-colors group-hover:text-foreground",
+                            subcategoryActive && "text-foreground",
+                          )}
+                        >
+                          {subcategory}
+                        </span>
+                      </button>
+                      </div>
+                    );
+                  })
+                : null}
+            </div>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
 
@@ -303,10 +536,20 @@ function LoadingSiteRows() {
 
 function SavedSiteRow({
   site,
-  onPreviewChange,
+  rowIndex,
+  isFocusActive,
+  onHoverEnd,
+  onHoverStart,
+  onFocusStart,
+  registerRowRef,
 }: {
   site: SavedSite;
-  onPreviewChange?: (item: HoverPreviewItem | null) => void;
+  rowIndex: number;
+  isFocusActive: boolean;
+  onHoverEnd?: () => void;
+  onHoverStart?: (site: SavedSite, rowIndex: number) => void;
+  onFocusStart?: (site: SavedSite, rowIndex: number) => void;
+  registerRowRef?: (index: number, node: HTMLButtonElement | null) => void;
 }) {
   const metaTokens = site.meta
     .split("•")
@@ -314,27 +557,23 @@ function SavedSiteRow({
     .filter(Boolean);
   const targetUrl = normalizeSiteUrl(site.url);
   const targetHost = getSiteHost(targetUrl);
-  const previewItem = buildHoverPreviewItem(site);
-  const showPreview = () => {
-    if (!previewItem) return;
-    onPreviewChange?.(previewItem);
-  };
-  const hidePreview = () => {
-    onPreviewChange?.(null);
-  };
 
   return (
     <button
       className={cn(
-        "arcory-site-row group flex w-full cursor-pointer items-center gap-2.5 rounded-none border-b border-border/55 px-1 py-2.5 text-left text-[12px] transition-colors duration-150 hover:bg-muted/85",
+        "arcory-site-row arcory-list-divider group flex w-full cursor-pointer items-center gap-2.5 rounded-none border-b border-divider px-1 py-2.5 text-left text-[12px] transition-colors duration-150",
+        INTERACTIVE_SURFACE_CLASS,
         !targetUrl && "cursor-not-allowed opacity-60",
       )}
+      data-focus-active={isFocusActive ? "true" : undefined}
+      data-site-id={site.id}
+      data-site-row="true"
       disabled={!targetUrl}
       onClick={() => window.open(targetUrl, "_blank", "noopener,noreferrer")}
-      onBlur={hidePreview}
-      onFocus={showPreview}
-      onMouseEnter={showPreview}
-      onMouseLeave={hidePreview}
+      onFocus={() => onFocusStart?.(site, rowIndex)}
+      onMouseEnter={() => onHoverStart?.(site, rowIndex)}
+      onMouseLeave={onHoverEnd}
+      ref={(node) => registerRowRef?.(rowIndex, node)}
       type="button"
     >
       <div className="arcory-site-row-chevron flex items-center justify-center pr-1 text-muted-foreground transition-colors duration-150 group-hover:text-foreground">
@@ -344,7 +583,7 @@ function SavedSiteRow({
       <div className="flex min-w-0 flex-1 items-start pl-0">
         <div className="arcory-site-row-copy min-w-0 space-y-0.5">
           <p className="truncate text-[14px] text-foreground">{site.title}</p>
-          <p className="truncate text-[10px] leading-4 text-muted-foreground">
+          <p className="arcory-site-row-meta truncate text-[10px] leading-4 text-muted-foreground">
             {metaTokens.map((item, index) => (
               <span key={`${site.id}-${item}`}>
                 {index > 0 ? <span className="px-1">•</span> : null}
@@ -359,26 +598,63 @@ function SavedSiteRow({
 }
 
 export default function Home() {
-  const [activeCategory, setActiveCategory] = useState<Category>("ALL");
-  const [activeSubcategory, setActiveSubcategory] = useState("ALL");
   const [keyword, setKeyword] = useState("");
   const [sites, setSites] = useState<SavedSite[]>([]);
   const [isLoadingSites, setIsLoadingSites] = useState(true);
   const [isHydratingSites, setIsHydratingSites] = useState(false);
   const [hasMoreSites, setHasMoreSites] = useState(false);
-  const [isListUiVisible, setIsListUiVisible] = useState(false);
-  const [activePreview, setActivePreview] = useState<HoverPreviewItem | null>(null);
-  const buttonRefs = useRef<Partial<Record<Category, HTMLButtonElement | null>>>({});
+  const [isListUiVisible, setIsListUiVisible] = useState(true);
+  const [sitePreviewInteractionMode, setSitePreviewInteractionMode] = useState<SitePreviewInteractionMode | null>(null);
+  const [hoveredSiteId, setHoveredSiteId] = useState<string | null>(null);
+  const [focusedSiteId, setFocusedSiteId] = useState<string | null>(null);
+  const [isSiteListHovered, setIsSiteListHovered] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
+  const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
   const previewPrefetchingRef = useRef(new Set<string>());
+  const siteRowRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const sitePreviewInteractionModeRef = useRef<SitePreviewInteractionMode | null>(null);
+  const isCategoryFilterPersistenceReadyRef = useRef(false);
 
   useEffect(() => {
-    const timerId = window.setTimeout(() => {
-      setIsListUiVisible(true);
-    }, LIST_REVEAL_DELAY_MS);
+    try {
+      const raw = sessionStorage.getItem(CATEGORY_FILTER_STATE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          activeCategory?: unknown;
+          activeSubcategory?: unknown;
+          expandedCategories?: unknown;
+        };
 
-    return () => {
-      window.clearTimeout(timerId);
-    };
+        const nextActiveCategory =
+          typeof parsed.activeCategory === "string" && parsed.activeCategory.trim().length > 0
+            ? parsed.activeCategory
+            : null;
+        const nextActiveSubcategory =
+          typeof parsed.activeSubcategory === "string" && parsed.activeSubcategory.trim().length > 0
+            ? parsed.activeSubcategory
+            : null;
+        const nextExpandedCategories = Array.isArray(parsed.expandedCategories)
+          ? parsed.expandedCategories.filter(
+              (item): item is string => typeof item === "string" && item.trim().length > 0,
+            )
+          : [];
+
+        setActiveCategory(nextActiveCategory);
+        setActiveSubcategory(nextActiveSubcategory);
+        setExpandedCategories(
+          nextActiveCategory && !nextExpandedCategories.includes(nextActiveCategory)
+            ? [...nextExpandedCategories, nextActiveCategory]
+            : nextExpandedCategories,
+        );
+      }
+    } catch {
+      // Ignore category filter cache parse failures.
+    } finally {
+      queueMicrotask(() => {
+        isCategoryFilterPersistenceReadyRef.current = true;
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -441,7 +717,6 @@ export default function Home() {
           const cachedSites = JSON.parse(cachedRaw) as SavedSite[];
           if (Array.isArray(cachedSites) && cachedSites.length > 0) {
             setSites(cachedSites);
-            setIsLoadingSites(false);
             seeded = true;
           }
         }
@@ -449,9 +724,7 @@ export default function Home() {
         // Ignore local cache parse failures.
       }
 
-      if (!seeded) {
-        setIsLoadingSites(true);
-      }
+      setIsLoadingSites(!seeded);
       setIsHydratingSites(false);
       setHasMoreSites(false);
       try {
@@ -483,70 +756,186 @@ export default function Home() {
       }
     };
 
-    const fetchTimerId = window.setTimeout(() => {
-      void fetchSites();
-    }, LIST_BOOT_DELAY_MS);
+    void fetchSites();
 
     return () => {
       cancelled = true;
-      window.clearTimeout(fetchTimerId);
     };
   }, []);
 
-  const subcategoriesByCategory = useMemo(() => {
-    const grouped = Object.fromEntries(
-      siteCategories.map((category) => [category, new Set<string>()]),
-    ) as Record<SiteCategory, Set<string>>;
-
-    for (const site of sites) {
-      if (site.subcategory) {
-        const normalizedSubcategory = site.subcategory.trim().toUpperCase();
-        if (normalizedSubcategory !== site.category) {
-          grouped[site.category].add(normalizedSubcategory);
-        }
-      }
-    }
-
-    return Object.fromEntries(
-      siteCategories.map((category) => {
-        const dynamic = Array.from(grouped[category]).sort((a, b) => a.localeCompare(b, "en"));
-        return [category, dynamic];
-      }),
-    ) as Record<SiteCategory, string[]>;
-  }, [sites]);
-
-  const categoryCounts = useMemo(() => {
-    const counts = Object.fromEntries(categories.map((category) => [category, 0])) as Record<Category, number>;
-    counts.ALL = sites.length;
-
-    for (const site of sites) {
-      counts[site.category] += 1;
-    }
-
-    return counts;
-  }, [sites]);
+  const categoryTree = useMemo(() => buildCategoryTree(sites), [sites]);
 
   const filteredSites = useMemo(() => {
     const searchValue = keyword.trim().toLowerCase();
 
     return sites.filter((site) => {
-      const categoryMatched = activeCategory === "ALL" || site.category === activeCategory;
-      const subcategoryMatched =
-        activeSubcategory === "ALL" || site.subcategory?.trim().toUpperCase() === activeSubcategory;
       const keywordMatched = !searchValue || site.title.toLowerCase().includes(searchValue);
+      const category = getSiteCategory(site);
+      const subcategory = getSiteSubcategory(site);
+      const categoryMatched = !activeCategory || category === activeCategory;
+      const subcategoryMatched = !activeSubcategory || subcategory === activeSubcategory;
 
-      return categoryMatched && subcategoryMatched && keywordMatched;
+      return keywordMatched && categoryMatched && subcategoryMatched;
     });
-}, [activeCategory, activeSubcategory, keyword, sites]);
+  }, [activeCategory, activeSubcategory, keyword, sites]);
 
-const fallbackPreview = useMemo(
-  () => filteredSites.map((site) => buildHoverPreviewItem(site)).find((item): item is HoverPreviewItem => item !== null) ?? null,
-  [filteredSites],
-);
+  const activeFilterLabel = activeSubcategory ?? activeCategory;
 
-const displayPreview = activePreview ?? fallbackPreview;
+  const updateSitePreviewInteractionMode = (mode: SitePreviewInteractionMode | null) => {
+    sitePreviewInteractionModeRef.current = mode;
+    setSitePreviewInteractionMode(mode);
+  };
 
-useEffect(() => {
+  const registerSiteRowRef = (index: number, node: HTMLButtonElement | null) => {
+    siteRowRefs.current[index] = node;
+  };
+
+  const blurActiveSiteRow = () => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLButtonElement && activeElement.dataset.siteRow === "true") {
+      activeElement.blur();
+    }
+  };
+
+  const findRowIndexBySiteId = (siteId: string | null) => {
+    if (!siteId) return -1;
+    return filteredSites.findIndex((site) => site.id === siteId);
+  };
+
+  const getFirstNavigableRowIndex = (direction: 1 | -1) => {
+    const startIndex = direction === 1 ? 0 : filteredSites.length - 1;
+    for (
+      let index = startIndex;
+      index >= 0 && index < filteredSites.length;
+      index += direction
+    ) {
+      if (normalizeSiteUrl(filteredSites[index]?.url)) return index;
+    }
+    return -1;
+  };
+
+  const focusSiteRowByIndex = (nextIndex: number) => {
+    const nextButton = siteRowRefs.current[nextIndex];
+    const nextSite = filteredSites[nextIndex];
+    if (!nextButton || !nextSite || nextButton.disabled) return;
+
+    updateSitePreviewInteractionMode("focus");
+    setHoveredSiteId(null);
+    setFocusedSiteId(nextSite.id);
+    nextButton.focus({ preventScroll: true });
+    nextButton.scrollIntoView({ block: "nearest" });
+  };
+
+  const moveFocusedSiteRow = (direction: 1 | -1) => {
+    const currentIndex =
+      findRowIndexBySiteId(focusedSiteId) >= 0
+        ? findRowIndexBySiteId(focusedSiteId)
+        : findRowIndexBySiteId(hoveredSiteId);
+
+    if (currentIndex < 0) {
+      const fallbackIndex = getFirstNavigableRowIndex(direction);
+      if (fallbackIndex >= 0) {
+        focusSiteRowByIndex(fallbackIndex);
+      }
+      return;
+    }
+
+    for (
+      let nextIndex = currentIndex + direction;
+      nextIndex >= 0 && nextIndex < filteredSites.length;
+      nextIndex += direction
+    ) {
+      const nextButton = siteRowRefs.current[nextIndex];
+      if (!nextButton || nextButton.disabled) continue;
+      focusSiteRowByIndex(nextIndex);
+      return;
+    }
+  };
+
+  const hoveredPreview = useMemo(
+    () => filteredSites.find((site) => site.id === hoveredSiteId),
+    [filteredSites, hoveredSiteId],
+  );
+
+  const focusedPreview = useMemo(
+    () => filteredSites.find((site) => site.id === focusedSiteId),
+    [filteredSites, focusedSiteId],
+  );
+
+  const resolvedActivePreview = useMemo(() => {
+    if (sitePreviewInteractionMode === "hover") {
+      return hoveredPreview ? buildHoverPreviewItem(hoveredPreview) : null;
+    }
+
+    if (sitePreviewInteractionMode === "focus") {
+      return focusedPreview ? buildHoverPreviewItem(focusedPreview) : null;
+    }
+
+    return null;
+  }, [focusedPreview, hoveredPreview, sitePreviewInteractionMode]);
+
+  const fallbackPreview = useMemo(
+    () => filteredSites.map((site) => buildHoverPreviewItem(site)).find((item): item is HoverPreviewItem => item !== null) ?? null,
+    [filteredSites],
+  );
+
+  const displayPreview = resolvedActivePreview ?? fallbackPreview;
+  const isCategoryFilterValidationPending =
+    isLoadingSites || isHydratingSites || hasMoreSites;
+
+  useEffect(() => {
+    siteRowRefs.current.length = filteredSites.length;
+  }, [filteredSites.length]);
+
+  useEffect(() => {
+    const visibleSiteIds = new Set(filteredSites.map((site) => site.id));
+
+    if (hoveredSiteId && !visibleSiteIds.has(hoveredSiteId)) {
+      setHoveredSiteId(null);
+      if (sitePreviewInteractionMode === "hover") {
+        updateSitePreviewInteractionMode(null);
+      }
+    }
+
+    if (focusedSiteId && !visibleSiteIds.has(focusedSiteId)) {
+      setFocusedSiteId(null);
+      if (sitePreviewInteractionMode === "focus") {
+        updateSitePreviewInteractionMode(null);
+      }
+    }
+  }, [filteredSites, focusedSiteId, hoveredSiteId, sitePreviewInteractionMode]);
+
+  const handleListHotkeys = useEffectEvent((event: KeyboardEvent) => {
+    if (!["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft"].includes(event.key)) return;
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement || activeElement instanceof HTMLSelectElement) {
+      return;
+    }
+    if (activeElement instanceof HTMLElement && activeElement.isContentEditable) {
+      return;
+    }
+
+    event.preventDefault();
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      moveFocusedSiteRow(1);
+      return;
+    }
+
+    moveFocusedSiteRow(-1);
+  });
+
+  useEffect(() => {
+    if (!isSiteListHovered) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      handleListHotkeys(event);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isSiteListHovered]);
+
+  useEffect(() => {
     if (sites.length === 0) return;
     try {
       sessionStorage.setItem(SITES_CACHE_KEY, JSON.stringify(sites));
@@ -556,16 +945,54 @@ useEffect(() => {
   }, [sites]);
 
   useEffect(() => {
-    if (!activePreview) return;
-    const stillInCurrentResult = filteredSites.some((site) => site.id === activePreview.id);
-    if (!stillInCurrentResult) {
-      setActivePreview(null);
+    if (!isCategoryFilterPersistenceReadyRef.current) return;
+
+    try {
+      sessionStorage.setItem(
+        CATEGORY_FILTER_STATE_KEY,
+        JSON.stringify({
+          activeCategory,
+          activeSubcategory,
+          expandedCategories,
+        }),
+      );
+    } catch {
+      // Ignore storage quota errors.
     }
-  }, [activePreview, filteredSites]);
+  }, [activeCategory, activeSubcategory, expandedCategories]);
+
+  useEffect(() => {
+    if (!activeCategory) {
+      if (activeSubcategory) setActiveSubcategory(null);
+      return;
+    }
+
+    // Restored filters may target items that have not reached the client yet.
+    // Only validate once the current sync cycle has fully settled.
+    if (isCategoryFilterValidationPending || (sites.length === 0 && categoryTree.length === 0)) {
+      return;
+    }
+
+    const categoryStillExists = categoryTree.some((branch) => branch.category === activeCategory);
+    if (!categoryStillExists) {
+      setActiveCategory(null);
+      setActiveSubcategory(null);
+      return;
+    }
+
+    if (!activeSubcategory) return;
+    const subcategoryStillExists = categoryTree.some(
+      (branch) => branch.category === activeCategory && branch.subcategories.includes(activeSubcategory),
+    );
+
+    if (!subcategoryStillExists) {
+      setActiveSubcategory(null);
+    }
+  }, [activeCategory, activeSubcategory, categoryTree, isCategoryFilterValidationPending, sites.length]);
 
   useEffect(() => {
     if (!isListUiVisible || sites.length === 0) return;
-    if (activePreview) return;
+    if (resolvedActivePreview) return;
 
     const candidates = sites
       .slice(0, PREVIEW_PRELOAD_COUNT)
@@ -596,45 +1023,56 @@ useEffect(() => {
     return () => {
       window.clearTimeout(timerId);
     };
-  }, [activePreview, isListUiVisible, sites]);
-
-  const switchCategoryByArrow = (current: Category, direction: 1 | -1) => {
-    const currentIndex = categories.indexOf(current);
-    if (currentIndex === -1 || categories.length <= 1) return;
-
-    const nextIndex = (currentIndex + direction + categories.length) % categories.length;
-    const nextCategory = categories[nextIndex];
-
-    setActiveSubcategory("ALL");
-    setActiveCategory(nextCategory);
-    buttonRefs.current[nextCategory]?.focus();
-  };
-
-  const isCategoryEmpty =
-    !isLoadingSites && activeCategory !== "ALL" && categoryCounts[activeCategory] === 0 && keyword.trim().length === 0;
+  }, [resolvedActivePreview, isListUiVisible, sites]);
 
   return (
     <main className="arcory-page-shell min-h-[100dvh] bg-background">
       <div className="arcory-chaos-panel min-h-[100dvh] bg-card xl:grid xl:min-h-[100dvh] xl:grid-cols-[220px_minmax(0,calc(460px+(min(100vw,1728px)-1280px)*0.1919642857))_minmax(0,calc(520px+(min(100vw,1728px)-1280px)*0.2366071429))] xl:justify-center">
-        <div className="arcory-chaos-column px-6 pt-6 xl:min-h-[100dvh] xl:border-r xl:border-border/80 xl:px-0 xl:pr-6 xl:pt-6">
-          <aside className="mx-auto w-full max-w-[720px] xl:sticky xl:top-6 xl:max-w-none">
-            <Link
-              className="arcory-chaos-logo flex items-center gap-2 text-foreground transition-colors hover:text-foreground/80"
-              href="/"
-            >
-              <span className="arcory-chaos-image arcory-chaos-logo-mark inline-flex">
-                <IdenticonAvatar
-                  className="size-5"
-                  monoChroma={0}
-                  monoLightnessHigh={0.84}
-                  monoLightnessLow={0.12}
-                  seed="arcory-logo"
-                  size={20}
-                  variant="bayer-4x4-mono-oklch"
-                />
-              </span>
-              <span className="arcory-chaos-logo-copy text-lg leading-none">Arcory</span>
-            </Link>
+        <div className="arcory-chaos-column arcory-column-divider px-6 pt-6 xl:min-h-[100dvh] xl:border-r xl:border-divider xl:px-0 xl:pr-6 xl:pt-6">
+          <aside className="mx-auto w-full max-w-[720px] xl:sticky xl:top-6 xl:max-h-[calc(100dvh-24px)] xl:max-w-none xl:overflow-y-auto">
+            {isLoadingSites ? (
+              <LoadingCategoryTreeNav />
+            ) : (
+              <CategoryTreeNav
+                activeCategory={activeCategory}
+                activeSubcategory={activeSubcategory}
+                branches={categoryTree}
+                expandedCategories={expandedCategories}
+                onCategorySelect={(category) => {
+                  const isExpanded = expandedCategories.includes(category);
+
+                  if (activeCategory === category && !activeSubcategory && isExpanded) {
+                    setExpandedCategories((current) => current.filter((item) => item !== category));
+                    setActiveCategory(null);
+                    setActiveSubcategory(null);
+                    return;
+                  }
+
+                  setExpandedCategories((current) =>
+                    current.includes(category) ? current : [...current, category],
+                  );
+                  setActiveCategory(category);
+                  setActiveSubcategory(null);
+                }}
+                onRootSelect={() => {
+                  setActiveCategory(null);
+                  setActiveSubcategory(null);
+                }}
+                onSubcategorySelect={(category, subcategory) => {
+                  setExpandedCategories((current) =>
+                    current.includes(category) ? current : [...current, category],
+                  );
+
+                  if (activeCategory === category && activeSubcategory === subcategory) {
+                    setActiveSubcategory(null);
+                    return;
+                  }
+
+                  setActiveCategory(category);
+                  setActiveSubcategory(subcategory);
+                }}
+              />
+            )}
           </aside>
         </div>
 
@@ -644,89 +1082,80 @@ useEffect(() => {
               {isListUiVisible ? (
                 <>
                   <div className="arcory-chaos-toolbar sticky top-0 z-20 bg-card pb-4 pt-1 xl:top-6 xl:pt-0 xl:before:pointer-events-none xl:before:absolute xl:before:-top-6 xl:before:left-0 xl:before:block xl:before:h-6 xl:before:w-full xl:before:bg-card xl:before:content-['']">
-                    <div aria-label="Site categories" className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px]" role="tablist">
-                      {categories.map((category) => (
-                        <button
-                          aria-selected={activeCategory === category}
-                          className={cn(
-                            "cursor-pointer rounded-none px-1.5 py-1 leading-none transition-colors duration-150",
-                            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                            "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
-                            activeCategory === category &&
-                              "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80 dark:hover:text-secondary-foreground dark:active:bg-secondary/70 dark:active:text-secondary-foreground",
-                          )}
-                          key={category}
-                          onClick={() => {
-                            setActiveSubcategory("ALL");
-                            setActiveCategory(category);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "ArrowRight") {
-                              event.preventDefault();
-                              switchCategoryByArrow(category, 1);
-                            }
-
-                            if (event.key === "ArrowLeft") {
-                              event.preventDefault();
-                              switchCategoryByArrow(category, -1);
-                            }
-                          }}
-                          ref={(node) => {
-                            buttonRefs.current[category] = node;
-                          }}
-                          role="tab"
-                          type="button"
-                        >
-                          {category}
-                        </button>
-                      ))}
-                    </div>
-
-                    {activeCategory !== "ALL" ? (
-                      <div aria-label={`${activeCategory} subcategories`} className="no-scrollbar mt-2 overflow-x-auto">
-                        <div className="inline-flex min-w-full items-center gap-2 whitespace-nowrap bg-muted px-1 py-1 sm:min-w-0">
-                          {subcategoriesByCategory[activeCategory].map((subcategory) => (
-                            <button
-                              aria-pressed={activeSubcategory === subcategory}
-                              className={cn(
-                                "cursor-pointer rounded-none px-1.5 py-1 text-[11px] leading-none transition-colors duration-150",
-                                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                                "text-muted-foreground hover:bg-muted hover:text-foreground active:bg-muted/80 active:text-foreground",
-                                activeSubcategory === subcategory &&
-                                  "bg-foreground text-background hover:bg-foreground/90 hover:text-background active:text-background dark:bg-secondary dark:text-secondary-foreground dark:hover:bg-secondary/80 dark:hover:text-secondary-foreground dark:active:bg-secondary/70 dark:active:text-secondary-foreground",
-                              )}
-                              key={subcategory}
-                              onClick={() => setActiveSubcategory((current) => (current === subcategory ? "ALL" : subcategory))}
-                              type="button"
-                            >
-                              {subcategory}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
                     <Input
                       aria-label="Search saved websites"
-                      className="mt-3 h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none focus-visible:ring-0"
+                      className="arcory-search-input h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none"
                       placeholder="Search"
                       value={keyword}
                       onChange={(event) => setKeyword(event.target.value)}
                     />
                   </div>
 
-                  <div className="mt-1">
+                  <div
+                    className="mt-1"
+                    onBlur={(event: ReactFocusEvent<HTMLDivElement>) => {
+                      const nextTarget = event.relatedTarget as Node | null;
+                      if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+                      if (sitePreviewInteractionModeRef.current !== "focus") return;
+                      setFocusedSiteId(null);
+                      updateSitePreviewInteractionMode(null);
+                    }}
+                    onMouseEnter={() => setIsSiteListHovered(true)}
+                    onMouseLeave={() => {
+                      setIsSiteListHovered(false);
+                      setHoveredSiteId(null);
+                      if (sitePreviewInteractionModeRef.current === "hover") {
+                        updateSitePreviewInteractionMode(null);
+                      }
+                    }}
+                    onPointerMove={(event) => {
+                      if (sitePreviewInteractionModeRef.current !== "focus") return;
+                      const row = (event.target instanceof HTMLElement
+                        ? event.target.closest<HTMLButtonElement>("[data-site-row='true']")
+                        : null);
+                      const hoveredSiteIdFromPointer = row?.dataset.siteId;
+                      if (!hoveredSiteIdFromPointer) return;
+                      blurActiveSiteRow();
+                      setFocusedSiteId(null);
+                      setHoveredSiteId(hoveredSiteIdFromPointer);
+                      updateSitePreviewInteractionMode("hover");
+                    }}
+                  >
                     {isLoadingSites ? (
                       <LoadingSiteRows />
-                    ) : isCategoryEmpty ? (
-                      <div className="arcory-chaos-empty">
-                        <ListEmptyState category={activeCategory} mode="category" />
-                      </div>
                     ) : filteredSites.length > 0 ? (
-                      filteredSites.map((site) => <SavedSiteRow key={site.id} onPreviewChange={setActivePreview} site={site} />)
+                      filteredSites.map((site, index) => (
+                        <div className="arcory-reveal-item" key={site.id} style={getRevealStyle(index * SITE_REVEAL_STEP_MS)}>
+                          <SavedSiteRow
+                            isFocusActive={sitePreviewInteractionMode === "focus" && focusedSiteId === site.id}
+                            onFocusStart={(nextSite) => {
+                              updateSitePreviewInteractionMode("focus");
+                              setHoveredSiteId(null);
+                              setFocusedSiteId(nextSite.id);
+                            }}
+                            onHoverEnd={() => {
+                              setHoveredSiteId(null);
+                              if (sitePreviewInteractionModeRef.current === "hover") {
+                                updateSitePreviewInteractionMode(null);
+                              }
+                            }}
+                            onHoverStart={(nextSite) => {
+                              if (sitePreviewInteractionModeRef.current === "focus") {
+                                return;
+                              }
+                              setFocusedSiteId(null);
+                              updateSitePreviewInteractionMode("hover");
+                              setHoveredSiteId(nextSite.id);
+                            }}
+                            registerRowRef={registerSiteRowRef}
+                            rowIndex={index}
+                            site={site}
+                          />
+                        </div>
+                      ))
                     ) : (
                       <div className="arcory-chaos-empty">
-                        <ListEmptyState category={activeCategory} mode="search" />
+                        <ListEmptyState category="ALL" mode="search" />
                       </div>
                     )}
                   </div>
@@ -735,8 +1164,8 @@ useEffect(() => {
                     {isLoadingSites
                       ? "Loading..."
                       : isHydratingSites || hasMoreSites
-                        ? `${filteredSites.length} Saves · Syncing more...`
-                        : `${filteredSites.length} Saves`}
+                        ? `${activeFilterLabel ? activeFilterLabel + " · " : ""}${filteredSites.length} Saves · Syncing more...`
+                        : `${activeFilterLabel ? activeFilterLabel + " · " : ""}${filteredSites.length} Saves`}
                   </div>
                 </>
               ) : (
@@ -750,13 +1179,12 @@ useEffect(() => {
           </div>
         </section>
 
-        <div className="arcory-chaos-column hidden xl:block xl:min-h-[100dvh] xl:border-l xl:border-border/80 xl:pl-6 xl:pt-6">
+        <div className="arcory-chaos-column arcory-column-divider hidden xl:block xl:min-h-[100dvh] xl:border-l xl:border-divider xl:pl-6 xl:pt-6">
           <aside className="sticky top-6 space-y-4">
             {displayPreview ? (
               <HoverPreviewPanel className="arcory-chaos-preview w-full" item={displayPreview} />
             ) : (
               <IdlePreviewPanel
-                category={activeCategory}
                 className="arcory-chaos-preview"
                 keyword={keyword}
                 total={filteredSites.length}
