@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState, type FocusEvent a
 import { IdenticonAvatar } from "@/components/identicon-avatar";
 import { ListEmptyState } from "@/components/list-empty-state";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { type SavedSite } from "@/lib/site-types";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +40,7 @@ const faviconStatusCache = new Map<string, "ready" | "error">();
 const INITIAL_SITES_LIMIT = 24;
 const BACKGROUND_SITES_LIMIT = 48;
 const SITES_CACHE_KEY = "arcory-sites-cache-v3";
-const CATEGORY_FILTER_STATE_KEY = "arcory-category-filter-state-v1";
+const CATEGORY_FILTER_STATE_KEY = "arcory-category-filter-state-v2";
 const PREVIEW_PRELOAD_COUNT = 12;
 const PREVIEW_PRELOAD_DELAY_MS = 180;
 const CATEGORY_NAV_ORDER = ["Design", "Visual", "AI", "Product", "Dev", "Knowledge"] as const;
@@ -47,6 +48,14 @@ const INTERACTIVE_SURFACE_CLASS = "arcory-interactive-surface";
 const TREE_REVEAL_STEP_MS = 18;
 const SITE_REVEAL_STEP_MS = 14;
 const REVEAL_MAX_DELAY_MS = 180;
+const MODE_SHORTCUT_ITEMS = [
+  { key: "D", label: "Day" },
+  { key: "S", label: "Summer" },
+  { key: "R", label: "Rain" },
+  { key: "N", label: "Night" },
+  { key: "M", label: "Midnight" },
+  { key: "C", label: "Chaos" },
+] as const;
 
 function normalizeSiteUrl(value?: string) {
   if (!value) return "";
@@ -127,7 +136,7 @@ function TreeCategoryPrefix({ isLast }: { isLast: boolean }) {
       <span
         className={cn(
           "arcory-tree-connector absolute left-2 border-l border-divider-strong",
-          isLast ? "top-1 h-[calc(50%-0.25rem)]" : "top-1 bottom-1",
+          isLast ? "top-0 h-1/2" : "top-0 bottom-0",
         )}
       />
       <span className="arcory-tree-connector absolute left-2 top-1/2 w-3 -translate-y-1/2 border-t border-divider-strong" />
@@ -144,11 +153,11 @@ function TreeSubcategoryPrefix({
 }) {
   return (
     <span aria-hidden className="arcory-tree-prefix relative block h-6 w-11 shrink-0">
-      {!isCategoryLast ? <span className="arcory-tree-connector absolute left-2 top-1 bottom-1 border-l border-divider-strong" /> : null}
+      {!isCategoryLast ? <span className="arcory-tree-connector absolute left-2 top-0 bottom-0 border-l border-divider-strong" /> : null}
       <span
         className={cn(
           "arcory-tree-connector absolute left-7 border-l border-divider-strong",
-          isLast ? "top-1 h-[calc(50%-0.25rem)]" : "top-1 bottom-1",
+          isLast ? "top-0 h-1/2" : "top-0 bottom-0",
         )}
       />
       <span className="arcory-tree-connector absolute left-7 top-1/2 w-3 -translate-y-1/2 border-t border-divider-strong" />
@@ -167,35 +176,15 @@ function buildFaviconCandidates(host: string) {
 
 function SiteListAvatar({ seed, host }: { seed: string; host: string }) {
   const faviconCandidates = useMemo(() => buildFaviconCandidates(host), [host]);
-  const [faviconIndex, setFaviconIndex] = useState(0);
-  const [faviconStatus, setFaviconStatus] = useState<"loading" | "ready" | "error">("loading");
-  const faviconUrl = faviconCandidates[faviconIndex] ?? "";
-
-  useEffect(() => {
-    if (faviconCandidates.length === 0) {
-      setFaviconStatus("error");
-      setFaviconIndex(0);
-      return;
-    }
-
-    const readyIndex = faviconCandidates.findIndex((candidate) => faviconStatusCache.get(candidate) === "ready");
-    if (readyIndex >= 0) {
-      setFaviconIndex(readyIndex);
-      setFaviconStatus("ready");
-      return;
-    }
-
-    const pendingIndex = faviconCandidates.findIndex((candidate) => faviconStatusCache.get(candidate) !== "error");
-    if (pendingIndex >= 0) {
-      setFaviconIndex(pendingIndex);
-      const cached = faviconStatusCache.get(faviconCandidates[pendingIndex]);
-      setFaviconStatus(cached ?? "loading");
-      return;
-    }
-
-    setFaviconIndex(0);
-    setFaviconStatus("error");
-  }, [faviconCandidates]);
+  const readyIndex = faviconCandidates.findIndex((candidate) => faviconStatusCache.get(candidate) === "ready");
+  const pendingIndex = faviconCandidates.findIndex((candidate) => faviconStatusCache.get(candidate) !== "error");
+  const initialFaviconIndex = readyIndex >= 0 ? readyIndex : pendingIndex;
+  const [faviconIndex, setFaviconIndex] = useState(initialFaviconIndex);
+  const [faviconStatus, setFaviconStatus] = useState<"loading" | "ready" | "error">(() => {
+    if (initialFaviconIndex < 0) return "error";
+    return readyIndex >= 0 ? "ready" : "loading";
+  });
+  const faviconUrl = faviconIndex >= 0 ? (faviconCandidates[faviconIndex] ?? "") : "";
 
   return (
     <span className="relative inline-flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full">
@@ -228,6 +217,7 @@ function SiteListAvatar({ seed, host }: { seed: string; host: string }) {
               setFaviconStatus("loading");
               return;
             }
+            setFaviconIndex(-1);
             setFaviconStatus("error");
           }}
           onLoad={() => {
@@ -261,20 +251,13 @@ function buildHoverPreviewItem(site: SavedSite): HoverPreviewItem | null {
 }
 
 function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; className?: string }) {
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const screenshotUrl = item.screenshotUrl ?? "";
   const hasScreenshot = Boolean(screenshotUrl);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">(() => {
+    if (!hasScreenshot) return "error";
+    return screenshotStatusCache.get(screenshotUrl) === "ready" ? "ready" : "loading";
+  });
   const shouldRequestScreenshot = hasScreenshot && status !== "error";
-
-  useEffect(() => {
-    if (!hasScreenshot) {
-      setStatus("error");
-      return;
-    }
-
-    const cached = screenshotStatusCache.get(screenshotUrl);
-    setStatus(cached === "ready" ? "ready" : "loading");
-  }, [hasScreenshot, screenshotUrl]);
 
   useEffect(() => {
     if (!shouldRequestScreenshot || status !== "loading") return;
@@ -416,6 +399,8 @@ function CategoryTreeNav({
   activeSubcategory,
   branches,
   expandedCategories,
+  isRootActive,
+  isRootPinned,
   onCategorySelect,
   onRootSelect,
   onSubcategorySelect,
@@ -424,85 +409,91 @@ function CategoryTreeNav({
   activeSubcategory: string | null;
   branches: CategoryTreeBranch[];
   expandedCategories: string[];
+  isRootActive: boolean;
+  isRootPinned: boolean;
   onCategorySelect: (category: string) => void;
   onRootSelect: () => void;
   onSubcategorySelect: (category: string, subcategory: string) => void;
 }) {
   return (
-    <nav className="arcory-tree-nav font-mono text-[14px] leading-6 text-foreground">
-      <button
-        className="arcory-tree-root flex w-full cursor-pointer items-center rounded-none px-1 text-left text-lg leading-none transition-colors"
-        onClick={onRootSelect}
-        type="button"
-      >
-        <span className="arcory-tree-label">Arcory</span>
-      </button>
-
-      <div className="mt-3 space-y-0.5">
-        {branches.map((branch, branchIndex) => {
-          const isLastCategory = branchIndex === branches.length - 1;
-          const branchActive = activeCategory === branch.category;
-          const categoryDirectActive = branchActive && !activeSubcategory;
-          const branchExpanded = expandedCategories.includes(branch.category);
-
-          return (
-            <div
-              className="arcory-reveal-item"
-              key={branch.category}
-              style={getRevealStyle(branchIndex * TREE_REVEAL_STEP_MS)}
+    <TooltipProvider>
+      <nav className="arcory-tree-nav font-mono text-[14px] leading-6 text-foreground">
+        <Tooltip open={isRootActive ? false : undefined}>
+          <TooltipTrigger asChild>
+            <button
+              className={cn(
+                "arcory-tree-root sticky top-0 z-10 flex w-full cursor-pointer items-center rounded-none bg-card px-1 pt-[6px] text-left text-lg leading-none outline-none ring-0 transition-[padding] focus:outline-none focus-visible:outline-none focus-visible:ring-0",
+                isRootPinned && "pb-3",
+              )}
+              data-active={isRootActive ? "true" : undefined}
+              onClick={onRootSelect}
+              type="button"
             >
-              <button
-                className={cn(
-                  "arcory-tree-node group flex w-full cursor-pointer items-center rounded-none px-1 text-left transition-colors",
-                  INTERACTIVE_SURFACE_CLASS,
-                )}
-                data-active={categoryDirectActive ? "true" : undefined}
-                onClick={() => onCategorySelect(branch.category)}
-                type="button"
+              <span className="arcory-tree-label">Arcory</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="arcory-root-tooltip">All sites</TooltipContent>
+        </Tooltip>
+
+        <div className="mt-3 space-y-0.5">
+          {branches.map((branch, branchIndex) => {
+            const isLastCategory = branchIndex === branches.length - 1;
+            const branchActive = activeCategory === branch.category;
+            const categoryDirectActive = branchActive && !activeSubcategory;
+            const branchExpanded = expandedCategories.includes(branch.category);
+
+            return (
+              <div
+                className="arcory-reveal-item"
+                key={branch.category}
+                style={getRevealStyle(branchIndex * TREE_REVEAL_STEP_MS)}
               >
-                <TreeCategoryPrefix isLast={isLastCategory} />
-                <span className="arcory-tree-label min-w-0 truncate">{branch.category}</span>
-              </button>
+                <button
+                  className="arcory-tree-node group flex w-full cursor-pointer items-center rounded-none px-1 text-left outline-none ring-0 transition-colors focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+                  data-active={categoryDirectActive ? "true" : undefined}
+                  onClick={() => onCategorySelect(branch.category)}
+                  type="button"
+                >
+                  <TreeCategoryPrefix isLast={isLastCategory} />
+                  <span className="arcory-tree-label min-w-0 truncate">{branch.category}</span>
+                </button>
+                {branchExpanded
+                  ? branch.subcategories.map((subcategory, subcategoryIndex) => {
+                      const isLastSubcategory = subcategoryIndex === branch.subcategories.length - 1;
+                      const subcategoryActive = branchActive && activeSubcategory === subcategory;
 
-              {branchExpanded
-                ? branch.subcategories.map((subcategory, subcategoryIndex) => {
-                    const isLastSubcategory = subcategoryIndex === branch.subcategories.length - 1;
-                    const subcategoryActive = branchActive && activeSubcategory === subcategory;
-
-                    return (
-                      <div
-                        className="arcory-reveal-item"
-                        key={branch.category + "-" + subcategory}
-                        style={getRevealStyle(branchIndex * TREE_REVEAL_STEP_MS + (subcategoryIndex + 1) * 12)}
-                      >
-                        <button
-                        className={cn(
-                          "arcory-tree-node group flex w-full cursor-pointer items-center rounded-none px-1 text-left transition-colors",
-                          INTERACTIVE_SURFACE_CLASS,
-                        )}
-                        data-active={subcategoryActive ? "true" : undefined}
-                        onClick={() => onSubcategorySelect(branch.category, subcategory)}
-                        type="button"
-                      >
-                        <TreeSubcategoryPrefix isCategoryLast={isLastCategory} isLast={isLastSubcategory} />
-                        <span
-                          className={cn(
-                            "arcory-tree-label min-w-0 truncate text-muted-foreground transition-colors group-hover:text-foreground",
-                            subcategoryActive && "text-foreground",
-                          )}
+                      return (
+                        <div
+                          className="arcory-reveal-item"
+                          key={branch.category + "-" + subcategory}
+                          style={getRevealStyle(branchIndex * TREE_REVEAL_STEP_MS + (subcategoryIndex + 1) * 12)}
                         >
-                          {subcategory}
-                        </span>
-                      </button>
-                      </div>
-                    );
-                  })
-                : null}
-            </div>
-          );
-        })}
-      </div>
-    </nav>
+                          <button
+                          className="arcory-tree-node group flex w-full cursor-pointer items-center rounded-none px-1 text-left outline-none ring-0 transition-colors focus:outline-none focus-visible:outline-none focus-visible:ring-0"
+                          data-active={subcategoryActive ? "true" : undefined}
+                          onClick={() => onSubcategorySelect(branch.category, subcategory)}
+                          type="button"
+                        >
+                          <TreeSubcategoryPrefix isCategoryLast={isLastCategory} isLast={isLastSubcategory} />
+                          <span
+                            className={cn(
+                              "arcory-tree-label min-w-0 truncate text-muted-foreground transition-colors group-hover:text-foreground",
+                              subcategoryActive && "text-foreground",
+                            )}
+                          >
+                            {subcategory}
+                          </span>
+                        </button>
+                        </div>
+                      );
+                    })
+                  : null}
+              </div>
+            );
+          })}
+        </div>
+      </nav>
+    </TooltipProvider>
   );
 }
 
@@ -579,7 +570,7 @@ function SavedSiteRow({
       <div className="arcory-site-row-chevron flex items-center justify-center pr-1 text-muted-foreground transition-colors duration-150 group-hover:text-foreground">
         &gt;
       </div>
-      <span className="arcory-site-row-avatar inline-flex"><SiteListAvatar host={targetHost} seed={site.title} /></span>
+      <span className="arcory-site-row-avatar inline-flex"><SiteListAvatar host={targetHost} key={targetHost} seed={site.title} /></span>
       <div className="flex min-w-0 flex-1 items-start pl-0">
         <div className="arcory-site-row-copy min-w-0 space-y-0.5">
           <p className="truncate text-[14px] text-foreground">{site.title}</p>
@@ -603,18 +594,19 @@ export default function Home() {
   const [isLoadingSites, setIsLoadingSites] = useState(true);
   const [isHydratingSites, setIsHydratingSites] = useState(false);
   const [hasMoreSites, setHasMoreSites] = useState(false);
-  const [isListUiVisible, setIsListUiVisible] = useState(true);
+  const isListUiVisible = true;
   const [sitePreviewInteractionMode, setSitePreviewInteractionMode] = useState<SitePreviewInteractionMode | null>(null);
   const [hoveredSiteId, setHoveredSiteId] = useState<string | null>(null);
   const [focusedSiteId, setFocusedSiteId] = useState<string | null>(null);
   const [isSiteListHovered, setIsSiteListHovered] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
-  const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
+  const [isCategoryRootPinned, setIsCategoryRootPinned] = useState(false);
   const previewPrefetchingRef = useRef(new Set<string>());
   const siteRowRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const sitePreviewInteractionModeRef = useRef<SitePreviewInteractionMode | null>(null);
   const isCategoryFilterPersistenceReadyRef = useRef(false);
+  const categoryNavScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     try {
@@ -623,7 +615,6 @@ export default function Home() {
         const parsed = JSON.parse(raw) as {
           activeCategory?: unknown;
           activeSubcategory?: unknown;
-          expandedCategories?: unknown;
         };
 
         const nextActiveCategory =
@@ -634,19 +625,9 @@ export default function Home() {
           typeof parsed.activeSubcategory === "string" && parsed.activeSubcategory.trim().length > 0
             ? parsed.activeSubcategory
             : null;
-        const nextExpandedCategories = Array.isArray(parsed.expandedCategories)
-          ? parsed.expandedCategories.filter(
-              (item): item is string => typeof item === "string" && item.trim().length > 0,
-            )
-          : [];
 
         setActiveCategory(nextActiveCategory);
         setActiveSubcategory(nextActiveSubcategory);
-        setExpandedCategories(
-          nextActiveCategory && !nextExpandedCategories.includes(nextActiveCategory)
-            ? [...nextExpandedCategories, nextActiveCategory]
-            : nextExpandedCategories,
-        );
       }
     } catch {
       // Ignore category filter cache parse failures.
@@ -655,6 +636,22 @@ export default function Home() {
         isCategoryFilterPersistenceReadyRef.current = true;
       });
     }
+  }, []);
+
+  useEffect(() => {
+    const container = categoryNavScrollRef.current;
+    if (!container) return;
+
+    const syncPinnedState = () => {
+      setIsCategoryRootPinned(container.scrollTop > 0);
+    };
+
+    syncPinnedState();
+    container.addEventListener("scroll", syncPinnedState, { passive: true });
+
+    return () => {
+      container.removeEventListener("scroll", syncPinnedState);
+    };
   }, []);
 
   useEffect(() => {
@@ -780,10 +777,22 @@ export default function Home() {
   }, [activeCategory, activeSubcategory, keyword, sites]);
 
   const activeFilterLabel = activeSubcategory ?? activeCategory;
+  const expandedCategories = useMemo(() => (activeCategory ? [activeCategory] : []), [activeCategory]);
+  const isRootCategoryActive = !activeCategory && !activeSubcategory;
 
   const updateSitePreviewInteractionMode = (mode: SitePreviewInteractionMode | null) => {
     sitePreviewInteractionModeRef.current = mode;
     setSitePreviewInteractionMode(mode);
+  };
+
+  const resetCategoryFilters = () => {
+    setActiveCategory(null);
+    setActiveSubcategory(null);
+  };
+
+  const scrollPrimaryColumnsToTop = () => {
+    categoryNavScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const registerSiteRowRef = (index: number, node: HTMLButtonElement | null) => {
@@ -953,13 +962,12 @@ export default function Home() {
         JSON.stringify({
           activeCategory,
           activeSubcategory,
-          expandedCategories,
         }),
       );
     } catch {
       // Ignore storage quota errors.
     }
-  }, [activeCategory, activeSubcategory, expandedCategories]);
+  }, [activeCategory, activeSubcategory]);
 
   useEffect(() => {
     if (!activeCategory) {
@@ -1029,50 +1037,55 @@ export default function Home() {
     <main className="arcory-page-shell min-h-[100dvh] bg-background">
       <div className="arcory-chaos-panel min-h-[100dvh] bg-card xl:grid xl:min-h-[100dvh] xl:grid-cols-[220px_minmax(0,calc(460px+(min(100vw,1728px)-1280px)*0.1919642857))_minmax(0,calc(520px+(min(100vw,1728px)-1280px)*0.2366071429))] xl:justify-center">
         <div className="arcory-chaos-column arcory-column-divider px-6 pt-6 xl:min-h-[100dvh] xl:border-r xl:border-divider xl:px-0 xl:pr-6 xl:pt-6">
-          <aside className="mx-auto w-full max-w-[720px] xl:sticky xl:top-6 xl:max-h-[calc(100dvh-24px)] xl:max-w-none xl:overflow-y-auto">
-            {isLoadingSites ? (
-              <LoadingCategoryTreeNav />
-            ) : (
-              <CategoryTreeNav
-                activeCategory={activeCategory}
-                activeSubcategory={activeSubcategory}
-                branches={categoryTree}
-                expandedCategories={expandedCategories}
-                onCategorySelect={(category) => {
-                  const isExpanded = expandedCategories.includes(category);
+          <aside className="mx-auto w-full max-w-[720px] xl:sticky xl:top-6 xl:flex xl:h-[calc(100dvh-24px)] xl:max-w-none xl:flex-col xl:pb-4">
+            <div className="no-scrollbar min-h-0 xl:flex-1 xl:overflow-y-auto xl:overscroll-y-contain xl:pr-1" ref={categoryNavScrollRef}>
+              {isLoadingSites ? (
+                <LoadingCategoryTreeNav />
+              ) : (
+                <CategoryTreeNav
+                  activeCategory={activeCategory}
+                  activeSubcategory={activeSubcategory}
+                  branches={categoryTree}
+                  expandedCategories={expandedCategories}
+                  isRootActive={isRootCategoryActive}
+                  isRootPinned={isCategoryRootPinned}
+                  onCategorySelect={(category) => {
+                    if (activeCategory === category && !activeSubcategory) {
+                      resetCategoryFilters();
+                      return;
+                    }
 
-                  if (activeCategory === category && !activeSubcategory && isExpanded) {
-                    setExpandedCategories((current) => current.filter((item) => item !== category));
-                    setActiveCategory(null);
+                    setActiveCategory(category);
                     setActiveSubcategory(null);
-                    return;
-                  }
+                  }}
+                  onRootSelect={() => {
+                    resetCategoryFilters();
+                    scrollPrimaryColumnsToTop();
+                  }}
+                  onSubcategorySelect={(category, subcategory) => {
+                    if (activeCategory === category && activeSubcategory === subcategory) {
+                      setActiveSubcategory(null);
+                      return;
+                    }
 
-                  setExpandedCategories((current) =>
-                    current.includes(category) ? current : [...current, category],
-                  );
-                  setActiveCategory(category);
-                  setActiveSubcategory(null);
-                }}
-                onRootSelect={() => {
-                  setActiveCategory(null);
-                  setActiveSubcategory(null);
-                }}
-                onSubcategorySelect={(category, subcategory) => {
-                  setExpandedCategories((current) =>
-                    current.includes(category) ? current : [...current, category],
-                  );
+                    setActiveCategory(category);
+                    setActiveSubcategory(subcategory);
+                  }}
+                />
+              )}
+            </div>
 
-                  if (activeCategory === category && activeSubcategory === subcategory) {
-                    setActiveSubcategory(null);
-                    return;
-                  }
-
-                  setActiveCategory(category);
-                  setActiveSubcategory(subcategory);
-                }}
-              />
-            )}
+            <div className="mt-8 hidden shrink-0 pt-4 text-[11px] leading-5 text-muted-foreground xl:mt-auto xl:block">
+              <p className="text-[10px] uppercase tracking-[0.08em]">Mode Shortcuts</p>
+              <div className="mt-2 grid grid-cols-2 gap-x-5 gap-y-1.5">
+                {MODE_SHORTCUT_ITEMS.map((item) => (
+                  <div className="flex items-center gap-3" key={item.key}>
+                    <span className="text-foreground">{item.key}</span>
+                    <span>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </aside>
         </div>
 
@@ -1084,7 +1097,7 @@ export default function Home() {
                   <div className="arcory-chaos-toolbar sticky top-0 z-20 bg-card pb-4 pt-1 xl:top-6 xl:pt-0 xl:before:pointer-events-none xl:before:absolute xl:before:-top-6 xl:before:left-0 xl:before:block xl:before:h-6 xl:before:w-full xl:before:bg-card xl:before:content-['']">
                     <Input
                       aria-label="Search saved websites"
-                      className="arcory-search-input h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none"
+                      className="arcory-search-input h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
                       placeholder="Search"
                       value={keyword}
                       onChange={(event) => setKeyword(event.target.value)}
@@ -1182,7 +1195,7 @@ export default function Home() {
         <div className="arcory-chaos-column arcory-column-divider hidden xl:block xl:min-h-[100dvh] xl:border-l xl:border-divider xl:pl-6 xl:pt-6">
           <aside className="sticky top-6 space-y-4">
             {displayPreview ? (
-              <HoverPreviewPanel className="arcory-chaos-preview w-full" item={displayPreview} />
+              <HoverPreviewPanel className="arcory-chaos-preview w-full" item={displayPreview} key={displayPreview.screenshotUrl ?? displayPreview.id} />
             ) : (
               <IdlePreviewPanel
                 className="arcory-chaos-preview"

@@ -362,6 +362,13 @@ html.arcory-mode-midnight .arcory-midnight-overlay[data-ready="true"] {
   opacity: 0.4;
 }
 
+html.arcory-mode-night .arcory-root-tooltip,
+html.arcory-mode-midnight .arcory-root-tooltip {
+  background-color: oklch(0.985 0 0);
+  color: oklch(0.145 0 0);
+  border-color: color-mix(in oklch, oklch(0.145 0 0) 18%, transparent);
+}
+
 @media (max-width: 768px) {
   .arcory-midnight-overlay {
     object-position: left;
