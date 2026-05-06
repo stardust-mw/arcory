@@ -1089,12 +1089,12 @@ export default function Home() {
           </aside>
         </div>
 
-        <section className="arcory-chaos-column min-w-0 px-6 pb-8 pt-5 sm:pb-10 xl:min-h-[100dvh] xl:px-6 xl:pt-6">
+        <section className="arcory-chaos-column min-w-0 px-6 pb-8 pt-0 sm:pb-10 xl:min-h-[100dvh] xl:px-6 xl:pt-6">
           <div className="mx-auto flex h-full w-full max-w-[720px] flex-col xl:max-w-none">
             <section className="flex-1">
               {isListUiVisible ? (
                 <>
-                  <div className="arcory-chaos-toolbar sticky top-0 z-20 bg-card pb-4 pt-4 xl:top-6 xl:pt-0 xl:before:pointer-events-none xl:before:absolute xl:before:-top-6 xl:before:left-0 xl:before:block xl:before:h-6 xl:before:w-full xl:before:bg-card xl:before:content-['']">
+                  <div className="arcory-chaos-toolbar sticky top-0 z-20 bg-card py-2 xl:top-6 xl:pt-0 xl:pb-4 xl:before:pointer-events-none xl:before:absolute xl:before:-top-6 xl:before:left-0 xl:before:block xl:before:h-6 xl:before:w-full xl:before:bg-card xl:before:content-['']">
                     <Input
                       aria-label="Search saved websites"
                       className="arcory-search-input h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
