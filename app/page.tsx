@@ -1094,7 +1094,7 @@ export default function Home() {
             <section className="flex-1">
               {isListUiVisible ? (
                 <>
-                  <div className="arcory-chaos-toolbar sticky top-0 z-20 bg-card pb-4 pt-1 xl:top-6 xl:pt-0 xl:before:pointer-events-none xl:before:absolute xl:before:-top-6 xl:before:left-0 xl:before:block xl:before:h-6 xl:before:w-full xl:before:bg-card xl:before:content-['']">
+                  <div className="arcory-chaos-toolbar sticky top-0 z-20 bg-card pb-4 pt-4 xl:top-6 xl:pt-0 xl:before:pointer-events-none xl:before:absolute xl:before:-top-6 xl:before:left-0 xl:before:block xl:before:h-6 xl:before:w-full xl:before:bg-card xl:before:content-['']">
                     <Input
                       aria-label="Search saved websites"
                       className="arcory-search-input h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"

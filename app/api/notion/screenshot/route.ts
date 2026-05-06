@@ -15,7 +15,7 @@ const VALIDATE_INTERVAL_MS =
 const WEBP_MAX_WIDTH =
   Number.parseInt(process.env.NOTION_SCREENSHOT_PROXY_MAX_WIDTH ?? "", 10) || 640;
 const WEBP_QUALITY =
-  Number.parseInt(process.env.NOTION_SCREENSHOT_PROXY_WEBP_QUALITY ?? "", 10) || 48;
+  Number.parseInt(process.env.NOTION_SCREENSHOT_PROXY_WEBP_QUALITY ?? "", 10) || 68;
 const WEBP_EFFORT =
   Number.parseInt(process.env.NOTION_SCREENSHOT_PROXY_WEBP_EFFORT ?? "", 10) || 6;
 const DATA_DIR =
