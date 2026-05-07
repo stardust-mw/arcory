@@ -552,7 +552,7 @@ function SavedSiteRow({
   return (
     <button
       className={cn(
-        "arcory-site-row arcory-list-divider group flex w-full cursor-pointer items-center gap-2.5 rounded-none border-b border-divider px-1 py-2.5 text-left text-[12px] transition-colors duration-150",
+        "arcory-site-row arcory-list-divider group flex w-full cursor-pointer items-center gap-2.5 rounded-none border-b border-input px-1 py-2.5 text-left text-[12px] transition-colors duration-150",
         INTERACTIVE_SURFACE_CLASS,
         !targetUrl && "cursor-not-allowed opacity-60",
       )}
@@ -1036,7 +1036,7 @@ export default function Home() {
   return (
     <main className="arcory-page-shell min-h-[100dvh] bg-background">
       <div className="arcory-chaos-panel min-h-[100dvh] bg-card xl:grid xl:min-h-[100dvh] xl:grid-cols-[220px_minmax(0,calc(460px+(min(100vw,1728px)-1280px)*0.1919642857))_minmax(0,calc(520px+(min(100vw,1728px)-1280px)*0.2366071429))] xl:justify-center">
-        <div className="arcory-chaos-column arcory-column-divider px-6 pt-6 xl:min-h-[100dvh] xl:border-r xl:border-divider xl:px-0 xl:pr-6 xl:pt-6">
+        <div className="arcory-chaos-column arcory-column-divider px-6 pt-6 xl:min-h-[100dvh] xl:border-r xl:border-input xl:px-0 xl:pr-6 xl:pt-6">
           <aside className="mx-auto w-full max-w-[720px] xl:sticky xl:top-6 xl:flex xl:h-[calc(100dvh-24px)] xl:max-w-none xl:flex-col xl:pb-4">
             <div className="no-scrollbar min-h-0 xl:flex-1 xl:overflow-y-auto xl:overscroll-y-contain xl:pr-1" ref={categoryNavScrollRef}>
               {isLoadingSites ? (
@@ -1192,7 +1192,7 @@ export default function Home() {
           </div>
         </section>
 
-        <div className="arcory-chaos-column arcory-column-divider hidden xl:block xl:min-h-[100dvh] xl:border-l xl:border-divider xl:pl-6 xl:pt-6">
+        <div className="arcory-chaos-column arcory-column-divider hidden xl:block xl:min-h-[100dvh] xl:border-l xl:border-input xl:pl-6 xl:pt-6">
           <aside className="sticky top-6 space-y-4">
             {displayPreview ? (
               <HoverPreviewPanel className="arcory-chaos-preview w-full" item={displayPreview} key={displayPreview.screenshotUrl ?? displayPreview.id} />

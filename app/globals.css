@@ -124,14 +124,14 @@
 
 html.arcory-mode-day {
   color-scheme: light;
-  --background: oklch(0.9528 0.0086 84.57);
+  --background: #f7f7f4;
   --foreground: oklch(0.215 0 0);
-  --card: oklch(0.9528 0.0086 84.57);
+  --card: #f7f7f4;
   --card-foreground: oklch(0.215 0 0);
-  --popover: oklch(0.9528 0.0086 84.57);
+  --popover: #f7f7f4;
   --popover-foreground: oklch(0.215 0 0);
   --primary: oklch(0.215 0 0);
-  --primary-foreground: oklch(0.9528 0.0086 84.57);
+  --primary-foreground: #f7f7f4;
   --secondary: oklch(0.944 0.006 84.2);
   --secondary-foreground: oklch(0.215 0 0);
   --muted: oklch(0.944 0.006 84.2);
@@ -143,7 +143,7 @@ html.arcory-mode-day {
   --ring: oklch(0.627 0 0);
   --divider: var(--input);
   --divider-strong: oklch(0.215 0 0 / 0.45);
-  --arcory-interactive-bg: oklch(0.9294 0.0091 78.28 / 0.85);
+  --arcory-interactive-bg: #f2f1ed;
 }
 
 html.arcory-mode-night {
@@ -172,14 +172,14 @@ html.arcory-mode-night {
 
 html.arcory-mode-summer {
   color-scheme: light;
-  --background: oklch(0.9528 0.0086 84.57);
+  --background: #f7f7f4;
   --foreground: oklch(0.2178 0 0);
-  --card: oklch(0.9528 0.0086 84.57);
+  --card: #f7f7f4;
   --card-foreground: oklch(0.2178 0 0);
-  --popover: oklch(0.9528 0.0086 84.57);
+  --popover: #f7f7f4;
   --popover-foreground: oklch(0.2178 0 0);
   --primary: oklch(0.2178 0 0);
-  --primary-foreground: oklch(0.9528 0.0086 84.57);
+  --primary-foreground: #f7f7f4;
   --secondary: oklch(0.9294 0.0091 78.28);
   --secondary-foreground: oklch(0.2178 0 0);
   --muted: oklch(0.9294 0.0091 78.28);
@@ -191,7 +191,7 @@ html.arcory-mode-summer {
   --ring: oklch(0.6268 0 0);
   --divider: var(--input);
   --divider-strong: oklch(0.2178 0 0 / 0.45);
-  --arcory-interactive-bg: oklch(0.9294 0.0091 78.28 / 0.85);
+  --arcory-interactive-bg: #f2f1ed;
 }
 
 html.arcory-mode-midnight {
@@ -220,14 +220,14 @@ html.arcory-mode-midnight {
 
 html.arcory-mode-rain {
   color-scheme: light;
-  --background: oklch(0.9528 0.0086 84.57);
+  --background: #f7f7f4;
   --foreground: oklch(0.2178 0 0);
-  --card: oklch(0.9528 0.0086 84.57);
+  --card: #f7f7f4;
   --card-foreground: oklch(0.2178 0 0);
-  --popover: oklch(0.9528 0.0086 84.57);
+  --popover: #f7f7f4;
   --popover-foreground: oklch(0.2178 0 0);
   --primary: oklch(0.2178 0 0);
-  --primary-foreground: oklch(0.9528 0.0086 84.57);
+  --primary-foreground: #f7f7f4;
   --secondary: oklch(0.9294 0.0091 78.28);
   --secondary-foreground: oklch(0.2178 0 0);
   --muted: oklch(0.9294 0.0091 78.28);
@@ -239,11 +239,16 @@ html.arcory-mode-rain {
   --ring: oklch(0.6268 0 0);
   --divider: var(--input);
   --divider-strong: oklch(0.2178 0 0 / 0.45);
-  --arcory-interactive-bg: oklch(0.9294 0.0091 78.28 / 0.85);
+  --arcory-interactive-bg: #f2f1ed;
 }
 
-html.arcory-mode-night .arcory-search-input,
+html.arcory-mode-night .arcory-search-input {
+  background-color: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+
 html.arcory-mode-midnight .arcory-search-input {
+  background-color: transparent;
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
@@ -256,16 +261,16 @@ html.arcory-mode-midnight .arcory-search-input:focus-visible {
 html.arcory-mode-day,
 html.arcory-mode-summer {
   --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.9528 0.0086 84.57);
+  --destructive-foreground: #f7f7f4;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.9528 0.0086 84.57);
+  --sidebar: #f7f7f4;
   --sidebar-foreground: oklch(0.215 0 0);
   --sidebar-primary: oklch(0.215 0 0);
-  --sidebar-primary-foreground: oklch(0.9528 0.0086 84.57);
+  --sidebar-primary-foreground: #f7f7f4;
   --sidebar-accent: oklch(0.944 0.006 84.2);
   --sidebar-accent-foreground: oklch(0.215 0 0);
   --sidebar-border: oklch(0.884 0.005 84.4);
@@ -274,16 +279,16 @@ html.arcory-mode-summer {
 
 html.arcory-mode-rain {
   --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.9528 0.0086 84.57);
+  --destructive-foreground: #f7f7f4;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.9528 0.0086 84.57);
+  --sidebar: #f7f7f4;
   --sidebar-foreground: oklch(0.2178 0 0);
   --sidebar-primary: oklch(0.2178 0 0);
-  --sidebar-primary-foreground: oklch(0.9528 0.0086 84.57);
+  --sidebar-primary-foreground: #f7f7f4;
   --sidebar-accent: oklch(0.9294 0.0091 78.28);
   --sidebar-accent-foreground: oklch(0.2178 0 0);
   --sidebar-border: oklch(0.8737 0.0088 84.58);
@@ -487,14 +492,19 @@ html.arcory-mode-midnight .arcory-root-tooltip {
     box-shadow: none;
   }
 
-  .arcory-site-row[data-focus-active="true"] {
+  .arcory-site-row:has(+ .arcory-site-row[data-focus-active="true"]) {
+    border-bottom-color: transparent;
+  }
+
+  .arcory-site-row[data-focus-active="true"],
+  .arcory-site-row[data-focus-active="true"]:hover,
+  .arcory-site-row[data-focus-active="true"]:focus,
+  .arcory-site-row[data-focus-active="true"]:focus-visible {
     position: relative;
     z-index: 2;
-    background-color: color-mix(in oklch, var(--arcory-interactive-bg) 72%, transparent);
-    box-shadow:
-      0 -1px 0 0 color-mix(in oklch, var(--arcory-interactive-bg) 72%, transparent),
-      0 1px 0 0 color-mix(in oklch, var(--arcory-interactive-bg) 72%, transparent),
-      inset 0 0 0 1px color-mix(in oklch, var(--foreground) 28%, transparent);
+    background-color: transparent;
+    border-bottom-color: transparent;
+    box-shadow: inset 0 0 0 1px var(--arcory-focus-ring, #2783de);
   }
 
   .arcory-site-row[data-focus-active="true"] .arcory-site-row-chevron {
