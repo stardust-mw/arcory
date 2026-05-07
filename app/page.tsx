@@ -41,7 +41,7 @@ const INITIAL_SITES_LIMIT = 24;
 const BACKGROUND_SITES_LIMIT = 48;
 const SITES_CACHE_KEY = "arcory-sites-cache-v3";
 const CATEGORY_FILTER_STATE_KEY = "arcory-category-filter-state-v2";
-const PREVIEW_PRELOAD_COUNT = 12;
+const PREVIEW_PRELOAD_COUNT = 24;
 const PREVIEW_PRELOAD_DELAY_MS = 180;
 const CATEGORY_NAV_ORDER = ["Design", "Visual", "AI", "Product", "Dev", "Knowledge"] as const;
 const INTERACTIVE_SURFACE_CLASS = "arcory-interactive-surface";
@@ -278,7 +278,7 @@ function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; classN
         className,
       )}
     >
-      <div className="relative aspect-[16/10] overflow-hidden bg-gradient-to-br from-muted/70 via-muted/35 to-card sm:aspect-[4/3]">
+      <div className="relative aspect-[16/10] overflow-hidden bg-transparent sm:aspect-[4/3]">
         {shouldRequestScreenshot ? (
           <img
             alt=""
@@ -301,7 +301,7 @@ function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; classN
 
         {status === "loading" ? (
           <div className="absolute inset-0 flex items-center justify-center text-[11px] text-muted-foreground">
-            Loading preview...
+            Loading...
           </div>
         ) : null}
         {!hasScreenshot || status === "error" ? (
@@ -331,16 +331,12 @@ function IdlePreviewPanel({
         <span>Preview</span>
         <span>{label}</span>
       </div>
-      <div className="flex aspect-[16/10] flex-col justify-between bg-gradient-to-br from-muted/65 via-muted/25 to-card p-5 sm:aspect-[4/3]">
+      <div className="flex aspect-[16/10] flex-col justify-between bg-transparent p-5 sm:aspect-[4/3]">
         <div className="space-y-2.5">
-          <p className="text-sm text-foreground">Hover a site to inspect its screenshot.</p>
-          <p className="max-w-[28ch] text-xs leading-5 text-muted-foreground">
-            The right column is reserved for the active preview so the middle list can stay dense and readable.
-          </p>
+          <p className="text-sm text-foreground">Hover a site.</p>
+          <p className="text-xs leading-5 text-muted-foreground">Preview appears here.</p>
         </div>
-        <div className="border-t border-divider pt-4 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-          {total} entries ready
-        </div>
+
       </div>
     </aside>
   );
@@ -1035,10 +1031,10 @@ export default function Home() {
 
   return (
     <main className="arcory-page-shell min-h-[100dvh] bg-background">
-      <div className="arcory-chaos-panel min-h-[100dvh] bg-card xl:grid xl:min-h-[100dvh] xl:grid-cols-[220px_minmax(0,calc(460px+(min(100vw,1728px)-1280px)*0.1919642857))_minmax(0,calc(520px+(min(100vw,1728px)-1280px)*0.2366071429))] xl:justify-center">
-        <div className="arcory-chaos-column arcory-column-divider px-6 pt-6 xl:min-h-[100dvh] xl:border-r xl:border-input xl:px-0 xl:pr-6 xl:pt-6">
-          <aside className="mx-auto w-full max-w-[720px] xl:sticky xl:top-6 xl:flex xl:h-[calc(100dvh-24px)] xl:max-w-none xl:flex-col xl:pb-4">
-            <div className="no-scrollbar min-h-0 xl:flex-1 xl:overflow-y-auto xl:overscroll-y-contain xl:pr-1" ref={categoryNavScrollRef}>
+      <div className="arcory-chaos-panel min-h-[100dvh] bg-card lg:grid lg:min-h-[100dvh] lg:grid-cols-[200px_minmax(0,calc(460px+(min(100vw,1728px)-1024px)*0.1221590909))_minmax(0,calc(520px+(min(100vw,1728px)-1024px)*0.1505681818))] lg:justify-center">
+        <div className="arcory-chaos-column arcory-column-divider px-6 pt-6 lg:min-h-[100dvh] lg:border-r lg:border-input lg:pr-6 lg:pt-6">
+          <aside className="mx-auto w-full max-w-[720px] lg:sticky lg:top-6 lg:flex lg:h-[calc(100dvh-24px)] lg:max-w-none lg:flex-col lg:pb-4">
+            <div className="no-scrollbar min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-y-contain lg:pr-1" ref={categoryNavScrollRef}>
               {isLoadingSites ? (
                 <LoadingCategoryTreeNav />
               ) : (
@@ -1075,7 +1071,7 @@ export default function Home() {
               )}
             </div>
 
-            <div className="mt-8 hidden shrink-0 pt-4 text-[11px] leading-5 text-muted-foreground xl:mt-auto xl:block">
+            <div className="mt-8 hidden shrink-0 pt-4 text-[11px] leading-5 text-muted-foreground lg:mt-auto lg:block">
               <p className="text-[10px] uppercase tracking-[0.08em]">Mode Shortcuts</p>
               <div className="mt-2 grid grid-cols-2 gap-x-5 gap-y-1.5">
                 {MODE_SHORTCUT_ITEMS.map((item) => (
@@ -1089,12 +1085,12 @@ export default function Home() {
           </aside>
         </div>
 
-        <section className="arcory-chaos-column min-w-0 px-6 pb-8 pt-0 sm:pb-10 xl:min-h-[100dvh] xl:px-6 xl:pt-6">
-          <div className="mx-auto flex h-full w-full max-w-[720px] flex-col xl:max-w-none">
+        <section className="arcory-chaos-column min-w-0 px-6 pb-8 pt-0 sm:pb-10 lg:min-h-[100dvh] lg:pt-6 xl:px-6">
+          <div className="mx-auto flex h-full w-full max-w-[720px] flex-col lg:max-w-none">
             <section className="flex-1">
               {isListUiVisible ? (
                 <>
-                  <div className="arcory-chaos-toolbar sticky top-0 z-20 bg-card py-2 xl:top-6 xl:pt-0 xl:pb-4 xl:before:pointer-events-none xl:before:absolute xl:before:-top-6 xl:before:left-0 xl:before:block xl:before:h-6 xl:before:w-full xl:before:bg-card xl:before:content-['']">
+                  <div className="arcory-chaos-toolbar sticky top-0 z-20 bg-card py-2 lg:top-6 lg:pt-0 lg:pb-4 lg:before:pointer-events-none lg:before:absolute lg:before:-top-6 lg:before:left-0 lg:before:block lg:before:h-6 lg:before:w-full lg:before:bg-card lg:before:content-['']">
                     <Input
                       aria-label="Search saved websites"
                       className="arcory-search-input h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
@@ -1192,7 +1188,7 @@ export default function Home() {
           </div>
         </section>
 
-        <div className="arcory-chaos-column arcory-column-divider hidden xl:block xl:min-h-[100dvh] xl:border-l xl:border-input xl:pl-6 xl:pt-6">
+        <div className="arcory-chaos-column arcory-column-divider hidden lg:block lg:min-h-[100dvh] lg:border-l lg:border-input lg:pl-6 lg:pr-6 lg:pt-6">
           <aside className="sticky top-6 space-y-4">
             {displayPreview ? (
               <HoverPreviewPanel className="arcory-chaos-preview w-full" item={displayPreview} key={displayPreview.screenshotUrl ?? displayPreview.id} />

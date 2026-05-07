@@ -13,7 +13,7 @@ const CACHE_TTL_MS = Number.parseInt(process.env.NOTION_SCREENSHOT_PROXY_CACHE_M
 const VALIDATE_INTERVAL_MS =
   Number.parseInt(process.env.NOTION_SCREENSHOT_PROXY_VALIDATE_MS ?? "", 10) || 60 * 1000;
 const WEBP_MAX_WIDTH =
-  Number.parseInt(process.env.NOTION_SCREENSHOT_PROXY_MAX_WIDTH ?? "", 10) || 640;
+  Number.parseInt(process.env.NOTION_SCREENSHOT_PROXY_MAX_WIDTH ?? "", 10) || 960;
 const WEBP_QUALITY =
   Number.parseInt(process.env.NOTION_SCREENSHOT_PROXY_WEBP_QUALITY ?? "", 10) || 68;
 const WEBP_EFFORT =
@@ -335,7 +335,7 @@ export async function GET(request: Request) {
       status: 200,
       headers: {
         "Content-Type": cached.entry.contentType,
-        "Cache-Control": "public, max-age=600, stale-while-revalidate=86400",
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
         "X-Arcory-Cache": "HIT-DISK",
       },
     });
