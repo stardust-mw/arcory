@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type FocusEvent as ReactFocusEvent } from "react";
+import { X } from "lucide-react";
 import { IdenticonAvatar } from "@/components/identicon-avatar";
 import { ListEmptyState } from "@/components/list-empty-state";
 import { Input } from "@/components/ui/input";
@@ -316,11 +317,9 @@ function HoverPreviewPanel({ item, className }: { item: HoverPreviewItem; classN
 
 function IdlePreviewPanel({
   keyword,
-  total,
   className,
 }: {
   keyword: string;
-  total: number;
   className?: string;
 }) {
   const label = keyword.trim() ? `Search: ${keyword.trim()}` : "All sites";
@@ -397,6 +396,7 @@ function CategoryTreeNav({
   expandedCategories,
   isRootActive,
   isRootPinned,
+  rootPinnedPaddingClass = "pb-3",
   onCategorySelect,
   onRootSelect,
   onSubcategorySelect,
@@ -407,6 +407,7 @@ function CategoryTreeNav({
   expandedCategories: string[];
   isRootActive: boolean;
   isRootPinned: boolean;
+  rootPinnedPaddingClass?: string;
   onCategorySelect: (category: string) => void;
   onRootSelect: () => void;
   onSubcategorySelect: (category: string, subcategory: string) => void;
@@ -419,7 +420,7 @@ function CategoryTreeNav({
             <button
               className={cn(
                 "arcory-tree-root sticky top-0 z-10 flex w-full cursor-pointer items-center rounded-none bg-card px-1 pt-[6px] text-left text-lg leading-none outline-none ring-0 transition-[padding] focus:outline-none focus-visible:outline-none focus-visible:ring-0",
-                isRootPinned && "pb-3",
+                isRootPinned && rootPinnedPaddingClass,
               )}
               data-active={isRootActive ? "true" : undefined}
               onClick={onRootSelect}
@@ -490,6 +491,105 @@ function CategoryTreeNav({
         </div>
       </nav>
     </TooltipProvider>
+  );
+}
+
+function MobileCategoryMenu({
+  activeCategory,
+  activeSubcategory,
+  branches,
+  isLoading,
+  isOpen,
+  onCategorySelect,
+  onClose,
+  onRootSelect,
+  onSubcategorySelect,
+}: {
+  activeCategory: string | null;
+  activeSubcategory: string | null;
+  branches: CategoryTreeBranch[];
+  isLoading: boolean;
+  isOpen: boolean;
+  onCategorySelect: (category: string) => void;
+  onClose: () => void;
+  onRootSelect: () => void;
+  onSubcategorySelect: (category: string, subcategory: string) => void;
+}) {
+  const [isRootPinned, setIsRootPinned] = useState(false);
+  const mobileNavScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const container = mobileNavScrollRef.current;
+    if (!container) return;
+
+    const syncPinnedState = () => {
+      setIsRootPinned(container.scrollTop > 0);
+    };
+
+    syncPinnedState();
+    container.addEventListener("scroll", syncPinnedState, { passive: true });
+
+    return () => {
+      container.removeEventListener("scroll", syncPinnedState);
+    };
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-card lg:hidden" id="arcory-mobile-menu">
+      <div className="flex h-full flex-col overflow-hidden px-6 pb-8 pt-3">
+        <div className="flex items-center">
+          <button
+            aria-label="Close menu"
+            className="inline-flex h-8 w-8 items-center justify-center text-foreground outline-none ring-0 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-0"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="size-5" strokeWidth={1.75} />
+          </button>
+        </div>
+
+        <div className="no-scrollbar mt-3 min-h-0 flex-1 overflow-y-auto overscroll-y-contain pr-1" ref={mobileNavScrollRef}>
+          {isLoading ? (
+            <LoadingCategoryTreeNav />
+          ) : (
+            <CategoryTreeNav
+              activeCategory={activeCategory}
+              activeSubcategory={activeSubcategory}
+              branches={branches}
+              expandedCategories={branches.map((branch) => branch.category)}
+              isRootActive={!activeCategory && !activeSubcategory}
+              isRootPinned={isRootPinned}
+              rootPinnedPaddingClass="pb-3"
+              onCategorySelect={(category) => {
+                onCategorySelect(category);
+                onClose();
+              }}
+              onRootSelect={() => {
+                onRootSelect();
+                onClose();
+              }}
+              onSubcategorySelect={(category, subcategory) => {
+                onSubcategorySelect(category, subcategory);
+                onClose();
+              }}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MobileMenuGlyph() {
+  return (
+    <div aria-hidden="true" className="relative size-4">
+      <span className="absolute left-0 top-1 block h-0.5 w-4 bg-foreground transition-all duration-100" />
+      <span className="absolute left-0 top-2.5 block h-0.5 w-4 bg-foreground transition-all duration-100" />
+    </div>
   );
 }
 
@@ -590,6 +690,7 @@ export default function Home() {
   const [isLoadingSites, setIsLoadingSites] = useState(true);
   const [isHydratingSites, setIsHydratingSites] = useState(false);
   const [hasMoreSites, setHasMoreSites] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const isListUiVisible = true;
   const [sitePreviewInteractionMode, setSitePreviewInteractionMode] = useState<SitePreviewInteractionMode | null>(null);
   const [hoveredSiteId, setHoveredSiteId] = useState<string | null>(null);
@@ -649,6 +750,25 @@ export default function Home() {
       container.removeEventListener("scroll", syncPinnedState);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isMobileMenuOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -784,6 +904,31 @@ export default function Home() {
   const resetCategoryFilters = () => {
     setActiveCategory(null);
     setActiveSubcategory(null);
+  };
+
+  const handleRootSelect = () => {
+    resetCategoryFilters();
+    scrollPrimaryColumnsToTop();
+  };
+
+  const handleCategorySelect = (category: string) => {
+    if (activeCategory === category && !activeSubcategory) {
+      resetCategoryFilters();
+      return;
+    }
+
+    setActiveCategory(category);
+    setActiveSubcategory(null);
+  };
+
+  const handleSubcategorySelect = (category: string, subcategory: string) => {
+    if (activeCategory === category && activeSubcategory === subcategory) {
+      setActiveSubcategory(null);
+      return;
+    }
+
+    setActiveCategory(category);
+    setActiveSubcategory(subcategory);
   };
 
   const scrollPrimaryColumnsToTop = () => {
@@ -1031,8 +1176,34 @@ export default function Home() {
 
   return (
     <main className="arcory-page-shell min-h-[100dvh] bg-background">
+      <div className="flex items-center gap-2 px-6 py-3 lg:hidden">
+        <button
+          aria-controls="arcory-mobile-menu"
+          aria-expanded={isMobileMenuOpen}
+          aria-label="Open menu"
+          className="inline-flex h-8 w-8 items-center justify-center text-foreground outline-none ring-0 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-0"
+          onClick={() => setIsMobileMenuOpen(true)}
+          type="button"
+        >
+          <MobileMenuGlyph />
+        </button>
+        <span className="font-mono text-lg leading-none text-foreground">Arcory</span>
+      </div>
+
+      <MobileCategoryMenu
+        activeCategory={activeCategory}
+        activeSubcategory={activeSubcategory}
+        branches={categoryTree}
+        isLoading={isLoadingSites}
+        isOpen={isMobileMenuOpen}
+        onCategorySelect={handleCategorySelect}
+        onClose={() => setIsMobileMenuOpen(false)}
+        onRootSelect={handleRootSelect}
+        onSubcategorySelect={handleSubcategorySelect}
+      />
+
       <div className="arcory-chaos-panel min-h-[100dvh] bg-card lg:grid lg:min-h-[100dvh] lg:grid-cols-[200px_minmax(0,calc(460px+(min(100vw,1728px)-1024px)*0.1221590909))_minmax(0,calc(520px+(min(100vw,1728px)-1024px)*0.1505681818))] lg:justify-center">
-        <div className="arcory-chaos-column arcory-column-divider px-6 pt-6 lg:min-h-[100dvh] lg:border-r lg:border-input lg:pr-6 lg:pt-6">
+        <div className="arcory-chaos-column arcory-column-divider hidden px-6 pt-6 lg:block lg:min-h-[100dvh] lg:border-r lg:border-input lg:pr-6 lg:pt-6">
           <aside className="mx-auto w-full max-w-[720px] lg:sticky lg:top-6 lg:flex lg:h-[calc(100dvh-24px)] lg:max-w-none lg:flex-col lg:pb-4">
             <div className="no-scrollbar min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-y-contain lg:pr-1" ref={categoryNavScrollRef}>
               {isLoadingSites ? (
@@ -1045,28 +1216,9 @@ export default function Home() {
                   expandedCategories={expandedCategories}
                   isRootActive={isRootCategoryActive}
                   isRootPinned={isCategoryRootPinned}
-                  onCategorySelect={(category) => {
-                    if (activeCategory === category && !activeSubcategory) {
-                      resetCategoryFilters();
-                      return;
-                    }
-
-                    setActiveCategory(category);
-                    setActiveSubcategory(null);
-                  }}
-                  onRootSelect={() => {
-                    resetCategoryFilters();
-                    scrollPrimaryColumnsToTop();
-                  }}
-                  onSubcategorySelect={(category, subcategory) => {
-                    if (activeCategory === category && activeSubcategory === subcategory) {
-                      setActiveSubcategory(null);
-                      return;
-                    }
-
-                    setActiveCategory(category);
-                    setActiveSubcategory(subcategory);
-                  }}
+                  onCategorySelect={handleCategorySelect}
+                  onRootSelect={handleRootSelect}
+                  onSubcategorySelect={handleSubcategorySelect}
                 />
               )}
             </div>
@@ -1090,7 +1242,7 @@ export default function Home() {
             <section className="flex-1">
               {isListUiVisible ? (
                 <>
-                  <div className="arcory-chaos-toolbar sticky top-0 z-20 bg-card py-2 lg:top-6 lg:pt-0 lg:pb-4 lg:before:pointer-events-none lg:before:absolute lg:before:-top-6 lg:before:left-0 lg:before:block lg:before:h-6 lg:before:w-full lg:before:bg-card lg:before:content-['']">
+                  <div className="arcory-chaos-toolbar sticky top-0 z-20 hidden bg-card py-2 lg:block lg:top-6 lg:pt-0 lg:pb-4 lg:before:pointer-events-none lg:before:absolute lg:before:-top-6 lg:before:left-0 lg:before:block lg:before:h-6 lg:before:w-full lg:before:bg-card lg:before:content-['']">
                     <Input
                       aria-label="Search saved websites"
                       className="arcory-search-input h-8 rounded-none border-input bg-transparent px-2 text-xs shadow-none ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:shadow-none"
@@ -1196,7 +1348,6 @@ export default function Home() {
               <IdlePreviewPanel
                 className="arcory-chaos-preview"
                 keyword={keyword}
-                total={filteredSites.length}
               />
             )}
           </aside>

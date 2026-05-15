@@ -48,7 +48,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html className="arcory-mode-day" data-site-mode="day" lang="en">
+    <html className="arcory-mode-day" data-site-mode="day" lang="en" suppressHydrationWarning>
       <body className={`${fragmentMono.variable} antialiased`}>
         <script
           dangerouslySetInnerHTML={{
