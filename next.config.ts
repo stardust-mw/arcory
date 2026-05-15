@@ -3,6 +3,7 @@ import path from "node:path";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  allowedDevOrigins: ["172.22.103.109"],
   images: {
     formats: ["image/avif", "image/webp"],
     minimumCacheTTL: 60 * 60,
